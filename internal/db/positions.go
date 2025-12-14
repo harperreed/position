@@ -6,6 +6,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/harper/position/internal/models"
@@ -47,6 +48,93 @@ func GetTimeline(db *sql.DB, itemID uuid.UUID) ([]*models.Position, error) {
 	}
 	defer func() { _ = rows.Close() }()
 
+	var positions []*models.Position
+	for rows.Next() {
+		pos, err := scanPositionFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		positions = append(positions, pos)
+	}
+	return positions, rows.Err()
+}
+
+// GetPositionsSince retrieves positions for an item since a given time, oldest first.
+func GetPositionsSince(db *sql.DB, itemID uuid.UUID, since time.Time) ([]*models.Position, error) {
+	rows, err := db.Query(
+		`SELECT id, item_id, latitude, longitude, label, recorded_at, created_at
+		 FROM positions WHERE item_id = ? AND recorded_at >= ? ORDER BY recorded_at ASC`,
+		itemID.String(), since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query positions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanPositions(rows)
+}
+
+// GetPositionsInRange retrieves positions for an item within a time range, oldest first.
+func GetPositionsInRange(db *sql.DB, itemID uuid.UUID, from, to time.Time) ([]*models.Position, error) {
+	rows, err := db.Query(
+		`SELECT id, item_id, latitude, longitude, label, recorded_at, created_at
+		 FROM positions WHERE item_id = ? AND recorded_at >= ? AND recorded_at <= ? ORDER BY recorded_at ASC`,
+		itemID.String(), from, to,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query positions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanPositions(rows)
+}
+
+// GetAllPositions retrieves all positions for all items, oldest first.
+func GetAllPositions(db *sql.DB) ([]*models.Position, error) {
+	rows, err := db.Query(
+		`SELECT id, item_id, latitude, longitude, label, recorded_at, created_at
+		 FROM positions ORDER BY recorded_at ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query positions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanPositions(rows)
+}
+
+// GetAllPositionsSince retrieves all positions since a given time, oldest first.
+func GetAllPositionsSince(db *sql.DB, since time.Time) ([]*models.Position, error) {
+	rows, err := db.Query(
+		`SELECT id, item_id, latitude, longitude, label, recorded_at, created_at
+		 FROM positions WHERE recorded_at >= ? ORDER BY recorded_at ASC`,
+		since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query positions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanPositions(rows)
+}
+
+// GetAllPositionsInRange retrieves all positions within a time range, oldest first.
+func GetAllPositionsInRange(db *sql.DB, from, to time.Time) ([]*models.Position, error) {
+	rows, err := db.Query(
+		`SELECT id, item_id, latitude, longitude, label, recorded_at, created_at
+		 FROM positions WHERE recorded_at >= ? AND recorded_at <= ? ORDER BY recorded_at ASC`,
+		from, to,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query positions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanPositions(rows)
+}
+
+// scanPositions scans multiple position rows into a slice.
+func scanPositions(rows *sql.Rows) ([]*models.Position, error) {
 	var positions []*models.Position
 	for rows.Next() {
 		pos, err := scanPositionFromRows(rows)
