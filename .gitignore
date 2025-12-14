@@ -1,0 +1,12 @@
+# Binaries
+/position
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+coverage.out
+
+# Go workspace file
+go.work
