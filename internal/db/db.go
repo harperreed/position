@@ -1,0 +1,53 @@
+// ABOUTME: Database connection management and initialization
+// ABOUTME: Handles SQLite connection and migration execution
+
+package db
+
+import (
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	_ "modernc.org/sqlite"
+)
+
+// InitDB initializes the database connection and runs migrations.
+func InitDB(dbPath string) (*sql.DB, error) {
+	dir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return nil, fmt.Errorf("failed to create database directory: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
+	if err := runMigrations(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	return db, nil
+}
+
+// GetDefaultDBPath returns the default database path following XDG standards.
+func GetDefaultDBPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "."
+	}
+
+	dataDir := os.Getenv("XDG_DATA_HOME")
+	if dataDir == "" {
+		dataDir = filepath.Join(homeDir, ".local", "share")
+	}
+
+	return filepath.Join(dataDir, "position", "position.db")
+}
