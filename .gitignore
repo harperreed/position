@@ -10,3 +10,4 @@ coverage.out
 
 # Go workspace file
 go.work
+scripts/.env
