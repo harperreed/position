@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/fatih/color"
@@ -15,30 +14,24 @@ import (
 )
 
 var addCmd = &cobra.Command{
-	Use:     "add <name> <latitude> <longitude>",
+	Use:     "add <name> --lat <latitude> --lng <longitude>",
 	Aliases: []string{"a"},
 	Short:   "Add a position for an item",
 	Long: `Add a new position for an item. Creates the item if it doesn't exist.
 
 Examples:
-  position add harper 41.8781 -87.6298
-  position add harper 41.8781 -87.6298 --label chicago
-  position add harper 41.8781 -87.6298 --label chicago --at 2024-12-14T15:00:00Z`,
-	Args: cobra.ExactArgs(3),
+  position add harper --lat 41.8781 --lng -87.6298
+  position add harper --lat 41.8781 --lng -87.6298 --label chicago
+  position add harper --lat 41.8781 --lng -87.6298 -l chicago --at 2024-12-14T15:00:00Z`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		lat, err := strconv.ParseFloat(args[1], 64)
-		if err != nil {
-			return fmt.Errorf("invalid latitude: %w", err)
-		}
+		lat, _ := cmd.Flags().GetFloat64("lat")
+		lng, _ := cmd.Flags().GetFloat64("lng")
+
 		if lat < -90 || lat > 90 {
 			return fmt.Errorf("latitude must be between -90 and 90")
-		}
-
-		lng, err := strconv.ParseFloat(args[2], 64)
-		if err != nil {
-			return fmt.Errorf("invalid longitude: %w", err)
 		}
 		if lng < -180 || lng > 180 {
 			return fmt.Errorf("longitude must be between -180 and 180")
@@ -90,9 +83,13 @@ Examples:
 }
 
 func init() {
+	addCmd.Flags().Float64("lat", 0, "latitude coordinate (-90 to 90)")
+	addCmd.Flags().Float64("lng", 0, "longitude coordinate (-180 to 180)")
 	addCmd.Flags().StringP("label", "l", "", "location label (e.g., 'chicago')")
 	addCmd.Flags().String("at", "", "recorded time (RFC3339, e.g., 2024-12-14T15:00:00Z)")
-	addCmd.Flags().SetInterspersed(false)
+
+	_ = addCmd.MarkFlagRequired("lat")
+	_ = addCmd.MarkFlagRequired("lng")
 
 	rootCmd.AddCommand(addCmd)
 }

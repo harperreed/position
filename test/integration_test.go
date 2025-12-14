@@ -37,7 +37,7 @@ func TestFullWorkflow(t *testing.T) {
 	}
 
 	// Add a position
-	output, err := run("add", "--label", "chicago", "harper", "41.8781", "-87.6298")
+	output, err := run("add", "harper", "--lat", "41.8781", "--lng", "-87.6298", "--label", "chicago")
 	if err != nil {
 		t.Fatalf("Failed to add: %v\n%s", err, output)
 	}
@@ -55,7 +55,7 @@ func TestFullWorkflow(t *testing.T) {
 	}
 
 	// Add another position
-	_, err = run("add", "--label", "new york", "harper", "40.7128", "-74.0060")
+	_, err = run("add", "harper", "--lat", "40.7128", "--lng", "-74.0060", "--label", "new york")
 	if err != nil {
 		t.Fatalf("Failed to add second position: %v", err)
 	}

@@ -29,14 +29,14 @@ make build
 
 ```bash
 # Track someone's location
-position add harper 41.8781 -87.6298 --label "chicago"
+position add harper --lat 41.8781 --lng -87.6298 --label chicago
 
 # Where are they now?
 position current harper
 # harper @ chicago (41.8781, -87.6298) - just now
 
 # They moved!
-position add harper 40.7128 -74.0060 --label "new york"
+position add harper --lat 40.7128 --lng -74.0060 --label "new york"
 
 # See the journey
 position timeline harper
@@ -57,7 +57,7 @@ position remove harper
 
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `position add <name> <lat> <lng>` | `a` | Add a position for an item |
+| `position add <name> --lat <lat> --lng <lng>` | `a` | Add a position for an item |
 | `position current <name>` | `c` | Get current (most recent) position |
 | `position timeline <name>` | `t` | Get position history (newest first) |
 | `position list` | `ls` | List all tracked items |
@@ -67,21 +67,19 @@ position remove harper
 ### Add Options
 
 ```bash
-# Basic usage
-position add <name> <latitude> <longitude>
+# Basic usage (--lat and --lng are required)
+position add <name> --lat <latitude> --lng <longitude>
 
 # With location label
-position add harper 41.8781 -87.6298 --label "chicago"
-position add harper 41.8781 -87.6298 -l "chicago"
+position add harper --lat 41.8781 --lng -87.6298 --label chicago
+position add harper --lat 41.8781 --lng -87.6298 -l chicago
 
 # Backdate a position (RFC3339 timestamp)
-position add harper 41.8781 -87.6298 --at "2024-12-14T08:00:00Z"
+position add harper --lat 41.8781 --lng -87.6298 --at "2024-12-14T08:00:00Z"
 
 # Combined
-position add harper 41.8781 -87.6298 -l "chicago" --at "2024-12-14T08:00:00Z"
+position add harper --lat 41.8781 --lng -87.6298 -l chicago --at "2024-12-14T08:00:00Z"
 ```
-
-**Note:** Flags must come before positional arguments to handle negative coordinates correctly.
 
 ### Remove Options
 
