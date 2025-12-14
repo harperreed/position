@@ -51,7 +51,7 @@ func FormatItemWithPosition(item *models.Item, pos *models.Position) string {
 			color.New(color.Faint).Sprint("no position"))
 	}
 
-	posStr := ""
+	var posStr string
 	if pos.Label != nil && *pos.Label != "" {
 		posStr = *pos.Label
 	} else {

@@ -45,7 +45,7 @@ func GetTimeline(db *sql.DB, itemID uuid.UUID) ([]*models.Position, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query positions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var positions []*models.Position
 	for rows.Next() {

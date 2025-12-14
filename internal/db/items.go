@@ -41,7 +41,7 @@ func ListItems(db *sql.DB) ([]*models.Item, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query items: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var items []*models.Item
 	for rows.Next() {

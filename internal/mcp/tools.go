@@ -112,7 +112,7 @@ func (s *Server) handleAddPosition(_ context.Context, req *mcp.CallToolRequest, 
 		RecordedAt: pos.RecordedAt,
 	}
 
-	jsonBytes, _ := json.MarshalIndent(output, "", "  ")
+	jsonBytes, _ := json.MarshalIndent(output, "", "  ") //nolint:errchkjson // output is always serializable
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(jsonBytes)}},
 	}, output, nil
@@ -159,7 +159,7 @@ func (s *Server) handleGetCurrent(_ context.Context, req *mcp.CallToolRequest, i
 		RecordedAt: pos.RecordedAt,
 	}
 
-	jsonBytes, _ := json.MarshalIndent(output, "", "  ")
+	jsonBytes, _ := json.MarshalIndent(output, "", "  ") //nolint:errchkjson // output is always serializable
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(jsonBytes)}},
 	}, output, nil
@@ -217,7 +217,7 @@ func (s *Server) handleGetTimeline(_ context.Context, req *mcp.CallToolRequest, 
 		Count:     len(posOutputs),
 	}
 
-	jsonBytes, _ := json.MarshalIndent(output, "", "  ")
+	jsonBytes, _ := json.MarshalIndent(output, "", "  ") //nolint:errchkjson // output is always serializable
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(jsonBytes)}},
 	}, output, nil
@@ -275,7 +275,7 @@ func (s *Server) handleListItems(_ context.Context, req *mcp.CallToolRequest, in
 		Count: len(itemOutputs),
 	}
 
-	jsonBytes, _ := json.MarshalIndent(output, "", "  ")
+	jsonBytes, _ := json.MarshalIndent(output, "", "  ") //nolint:errchkjson // output is always serializable
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(jsonBytes)}},
 	}, output, nil
@@ -324,7 +324,7 @@ func (s *Server) handleRemoveItem(_ context.Context, req *mcp.CallToolRequest, i
 		Message: fmt.Sprintf("Removed '%s' and all position history", input.Name),
 	}
 
-	jsonBytes, _ := json.MarshalIndent(output, "", "  ")
+	jsonBytes, _ := json.MarshalIndent(output, "", "  ") //nolint:errchkjson // output is always serializable
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(jsonBytes)}},
 	}, output, nil

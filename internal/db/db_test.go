@@ -17,7 +17,7 @@ func TestInitDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to init db: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Verify tables exist
 	var count int
@@ -69,7 +69,7 @@ func TestInitDB_CreatesDirIfNotExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to init db: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := os.Stat(filepath.Dir(dbPath)); os.IsNotExist(err) {
 		t.Error("directory was not created")

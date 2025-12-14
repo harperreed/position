@@ -58,10 +58,10 @@ func TestFormatRelativeTime(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t := time.Now().Add(-tc.duration)
-		result := FormatRelativeTime(t)
-		if result != tc.expected {
-			// Allow some flexibility
+		tm := time.Now().Add(-tc.duration)
+		result := FormatRelativeTime(tm)
+		if !strings.Contains(result, tc.expected[:4]) {
+			t.Errorf("for %v: expected %q in result, got %q", tc.duration, tc.expected, result)
 		}
 	}
 }

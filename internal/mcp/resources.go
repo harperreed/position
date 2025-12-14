@@ -48,7 +48,7 @@ func (s *Server) handleItemsResource(ctx context.Context, req *mcp.ReadResourceR
 		Count: len(itemOutputs),
 	}
 
-	jsonBytes, _ := json.MarshalIndent(output, "", "  ")
+	jsonBytes, _ := json.MarshalIndent(output, "", "  ") //nolint:errchkjson // output is always serializable
 
 	return &mcp.ReadResourceResult{
 		Contents: []*mcp.ResourceContents{

@@ -11,6 +11,7 @@ import (
 	"testing"
 )
 
+//nolint:funlen // integration tests are naturally longer
 func TestFullWorkflow(t *testing.T) {
 	projectRoot, err := filepath.Abs("..")
 	if err != nil {
@@ -18,7 +19,7 @@ func TestFullWorkflow(t *testing.T) {
 	}
 
 	binary := filepath.Join(projectRoot, "position")
-	buildCmd := exec.Command("go", "build", "-o", binary, "./cmd/position")
+	buildCmd := exec.Command("go", "build", "-o", binary, "./cmd/position") //nolint:gosec // arguments are controlled by test
 	buildCmd.Dir = projectRoot
 	buildOutput, err := buildCmd.CombinedOutput()
 	if err != nil {
@@ -31,7 +32,7 @@ func TestFullWorkflow(t *testing.T) {
 
 	run := func(args ...string) (string, error) {
 		fullArgs := append([]string{"--db", dbPath}, args...)
-		cmd := exec.Command(binary, fullArgs...)
+		cmd := exec.Command(binary, fullArgs...) //nolint:gosec // binary path is controlled by test
 		output, err := cmd.CombinedOutput()
 		return string(output), err
 	}
