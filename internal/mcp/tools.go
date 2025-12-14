@@ -74,11 +74,8 @@ func (s *Server) registerAddPositionTool() {
 }
 
 func (s *Server) handleAddPosition(_ context.Context, req *mcp.CallToolRequest, input AddPositionInput) (*mcp.CallToolResult, PositionOutput, error) {
-	if input.Latitude < -90 || input.Latitude > 90 {
-		return nil, PositionOutput{}, fmt.Errorf("latitude must be between -90 and 90")
-	}
-	if input.Longitude < -180 || input.Longitude > 180 {
-		return nil, PositionOutput{}, fmt.Errorf("longitude must be between -180 and 180")
+	if err := models.ValidateCoordinates(input.Latitude, input.Longitude); err != nil {
+		return nil, PositionOutput{}, err
 	}
 
 	item, err := db.GetItemByName(s.db, input.Name)

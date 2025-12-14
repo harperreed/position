@@ -74,7 +74,10 @@ func scanItem(row *sql.Row) (*models.Item, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan item: %w", err)
 	}
-	item.ID, _ = uuid.Parse(idStr)
+	item.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse item ID: %w", err)
+	}
 	return &item, nil
 }
 
@@ -85,6 +88,9 @@ func scanItemFromRows(rows *sql.Rows) (*models.Item, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan item: %w", err)
 	}
-	item.ID, _ = uuid.Parse(idStr)
+	item.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse item ID: %w", err)
+	}
 	return &item, nil
 }

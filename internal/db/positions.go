@@ -66,8 +66,14 @@ func scanPosition(row *sql.Row) (*models.Position, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan position: %w", err)
 	}
-	pos.ID, _ = uuid.Parse(idStr)
-	pos.ItemID, _ = uuid.Parse(itemIDStr)
+	pos.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse position ID: %w", err)
+	}
+	pos.ItemID, err = uuid.Parse(itemIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse item ID: %w", err)
+	}
 	return &pos, nil
 }
 
@@ -79,7 +85,13 @@ func scanPositionFromRows(rows *sql.Rows) (*models.Position, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan position: %w", err)
 	}
-	pos.ID, _ = uuid.Parse(idStr)
-	pos.ItemID, _ = uuid.Parse(itemIDStr)
+	pos.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse position ID: %w", err)
+	}
+	pos.ItemID, err = uuid.Parse(itemIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse item ID: %w", err)
+	}
 	return &pos, nil
 }

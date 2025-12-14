@@ -23,7 +23,9 @@ from dotenv import load_dotenv
 # Entity ID -> position name mapping
 # Edit this to match your Home Assistant entities
 ENTITIES = {
-    "person.harper": "harper",
+    "person.harper_reed": "harper",
+    "person.hiromi_nakazawa": "hiromi",
+    "device_tracker.volvo": "volvo",
     # "device_tracker.harpers_iphone": "harper-phone",
     # "device_tracker.model_3": "car",
 }

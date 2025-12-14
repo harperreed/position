@@ -30,7 +30,7 @@ var rootCmd = &cobra.Command{
          📍 Track items and their locations over time
 
 Examples:
-  position add harper 41.8781 -87.6298 --label chicago
+  position add harper --lat 41.8781 --lng -87.6298 --label chicago
   position current harper
   position timeline harper
   position list`,
