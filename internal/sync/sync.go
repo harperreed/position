@@ -120,13 +120,13 @@ func (s *Syncer) queueChange(ctx context.Context, entity, entityID string, op va
 		return fmt.Errorf("marshal change: %w", err)
 	}
 
-	aad := change.AAD(s.keys.UserID(), s.config.DeviceID)
+	aad := change.AAD(s.config.UserID, s.config.DeviceID)
 	env, err := vault.Encrypt(s.keys.EncKey, plain, aad)
 	if err != nil {
 		return fmt.Errorf("encrypt change: %w", err)
 	}
 
-	if err := s.store.EnqueueEncryptedChange(ctx, change, s.keys.UserID(), s.config.DeviceID, env); err != nil {
+	if err := s.store.EnqueueEncryptedChange(ctx, change, s.config.UserID, s.config.DeviceID, env); err != nil {
 		return fmt.Errorf("enqueue change: %w", err)
 	}
 
@@ -144,11 +144,16 @@ func (s *Syncer) canSync() bool {
 
 // Sync pushes local changes and pulls remote changes.
 func (s *Syncer) Sync(ctx context.Context) error {
+	return s.SyncWithEvents(ctx, nil)
+}
+
+// SyncWithEvents pushes local changes and pulls remote changes with progress callbacks.
+func (s *Syncer) SyncWithEvents(ctx context.Context, events *vault.SyncEvents) error {
 	if !s.canSync() {
 		return errors.New("sync not configured - run 'position sync login' first")
 	}
 
-	return vault.Sync(ctx, s.store, s.client, s.keys, s.config.UserID, s.applyChange)
+	return vault.Sync(ctx, s.store, s.client, s.keys, s.config.UserID, s.applyChange, events)
 }
 
 // applyChange applies a remote change to the local database.
@@ -181,8 +186,7 @@ func (s *Syncer) applyItemChange(ctx context.Context, c vault.Change) error {
 
 	createdAt := time.Unix(payload.CreatedAt, 0)
 	_, err := s.appDB.ExecContext(ctx, `
-		INSERT INTO items (id, name, created_at) VALUES (?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name = excluded.name
+		INSERT OR REPLACE INTO items (id, name, created_at) VALUES (?, ?, ?)
 	`, c.EntityID, payload.Name, createdAt)
 
 	return err
@@ -244,4 +248,34 @@ func (s *Syncer) PendingCount(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	return len(batch), nil
+}
+
+// PendingItem represents a change waiting to be synced.
+type PendingItem struct {
+	ChangeID string
+	Entity   string
+	TS       time.Time
+}
+
+// PendingChanges returns details of changes waiting to be synced.
+func (s *Syncer) PendingChanges(ctx context.Context) ([]PendingItem, error) {
+	batch, err := s.store.DequeueBatch(ctx, 100)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]PendingItem, len(batch))
+	for i, b := range batch {
+		items[i] = PendingItem{
+			ChangeID: b.ChangeID,
+			Entity:   b.Entity,
+			TS:       time.Unix(b.TS, 0),
+		}
+	}
+	return items, nil
+}
+
+// LastSyncedSeq returns the last pulled sequence number.
+func (s *Syncer) LastSyncedSeq(ctx context.Context) (string, error) {
+	return s.store.GetState(ctx, "last_pulled_seq", "0")
 }

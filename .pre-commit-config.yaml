@@ -30,12 +30,8 @@ repos:
 
   - repo: local
     hooks:
-      - id: go-mod-verify
-        name: go mod verify
-        entry: go mod verify
-        language: system
-        files: go\.(mod|sum)$
-        pass_filenames: false
+      # go-mod-verify disabled: incompatible with replace directives
+      # (suitesync module uses local name but is hosted on github)
 
       - id: go-vet
         name: go vet

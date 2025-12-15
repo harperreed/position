@@ -10,10 +10,10 @@ require (
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/term v0.38.0
 	modernc.org/sqlite v1.40.1
-	suitesync v0.0.0-00010101000000-000000000000
+	suitesync v0.2.4
 )
 
-replace suitesync => github.com/harperreed/sweet v0.1.3
+replace suitesync => github.com/harperreed/sweet v0.2.4
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

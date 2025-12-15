@@ -181,14 +181,27 @@ var syncStatusCmd = &cobra.Command{
 
 		printTokenStatus(cfg)
 
-		// Show pending changes if configured
+		// Show sync state if configured
 		if cfg.IsConfigured() {
 			syncer, err := sync.NewSyncer(cfg, dbConn)
 			if err == nil {
 				defer func() { _ = syncer.Close() }()
-				pending, err := syncer.PendingCount(context.Background())
+				ctx := context.Background()
+
+				pending, err := syncer.PendingCount(ctx)
 				if err == nil {
-					fmt.Printf("\nPending:   %d changes\n", pending)
+					fmt.Print("\nPending:   ")
+					if pending == 0 {
+						color.Green("0 changes (up to date)")
+					} else {
+						color.Yellow("%d changes waiting to push", pending)
+					}
+					fmt.Println()
+				}
+
+				lastSeq, err := syncer.LastSyncedSeq(ctx)
+				if err == nil && lastSeq != "0" {
+					fmt.Printf("Last sync: seq %s\n", lastSeq)
 				}
 			}
 		}
@@ -202,6 +215,8 @@ var syncNowCmd = &cobra.Command{
 	Short: "Manually trigger sync",
 	Long:  `Push local changes and pull remote changes from the sync server.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		verbose, _ := cmd.Flags().GetBool("verbose")
+
 		cfg, err := sync.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
@@ -217,8 +232,31 @@ var syncNowCmd = &cobra.Command{
 		}
 		defer func() { _ = syncer.Close() }()
 
-		fmt.Println("Syncing...")
-		if err := syncer.Sync(context.Background()); err != nil {
+		ctx := context.Background()
+
+		var events *vault.SyncEvents
+		if verbose {
+			events = &vault.SyncEvents{
+				OnStart: func() {
+					fmt.Println("Syncing...")
+				},
+				OnPush: func(pushed, remaining int) {
+					fmt.Printf("  ↑ pushed %d changes (%d remaining)\n", pushed, remaining)
+				},
+				OnPull: func(pulled int) {
+					if pulled > 0 {
+						fmt.Printf("  ↓ pulled %d changes\n", pulled)
+					}
+				},
+				OnComplete: func(pushed, pulled int) {
+					fmt.Printf("  Total: %d pushed, %d pulled\n", pushed, pulled)
+				},
+			}
+		} else {
+			fmt.Println("Syncing...")
+		}
+
+		if err := syncer.SyncWithEvents(ctx, events); err != nil {
 			return fmt.Errorf("sync failed: %w", err)
 		}
 
@@ -255,14 +293,60 @@ var syncLogoutCmd = &cobra.Command{
 	},
 }
 
+var syncPendingCmd = &cobra.Command{
+	Use:   "pending",
+	Short: "Show changes waiting to sync",
+	Long:  `List all changes in the outbox that haven't been pushed to the server yet.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := sync.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		if !cfg.IsConfigured() {
+			fmt.Println("Sync not configured. Run 'position sync login' first.")
+			return nil
+		}
+
+		syncer, err := sync.NewSyncer(cfg, dbConn)
+		if err != nil {
+			return fmt.Errorf("create syncer: %w", err)
+		}
+		defer func() { _ = syncer.Close() }()
+
+		items, err := syncer.PendingChanges(context.Background())
+		if err != nil {
+			return fmt.Errorf("get pending: %w", err)
+		}
+
+		if len(items) == 0 {
+			color.Green("✓ No pending changes - everything is synced!")
+			return nil
+		}
+
+		fmt.Printf("Pending changes (%d):\n\n", len(items))
+		for _, item := range items {
+			fmt.Printf("  %s  %-10s  %s\n",
+				color.New(color.Faint).Sprint(item.ChangeID[:8]),
+				item.Entity,
+				item.TS.Format("2006-01-02 15:04:05"))
+		}
+		fmt.Printf("\nRun 'position sync now' to push these changes.\n")
+
+		return nil
+	},
+}
+
 func init() {
 	syncLoginCmd.Flags().String("server", "", "sync server URL (default: https://api.storeusa.org)")
+	syncNowCmd.Flags().BoolP("verbose", "v", false, "show detailed sync information")
 
 	syncCmd.AddCommand(syncInitCmd)
 	syncCmd.AddCommand(syncLoginCmd)
 	syncCmd.AddCommand(syncStatusCmd)
 	syncCmd.AddCommand(syncNowCmd)
 	syncCmd.AddCommand(syncLogoutCmd)
+	syncCmd.AddCommand(syncPendingCmd)
 
 	rootCmd.AddCommand(syncCmd)
 }
