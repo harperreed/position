@@ -5,12 +5,17 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"suitesync/vault"
+
 	"github.com/fatih/color"
 	"github.com/harper/position/internal/db"
+	"github.com/harper/position/internal/models"
+	"github.com/harper/position/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -39,6 +44,14 @@ var removeCmd = &cobra.Command{
 			}
 		}
 
+		// Get positions before deleting (for sync)
+		positions, _ := db.GetTimeline(dbConn, item.ID)
+
+		// Queue sync deletes before local delete
+		if err := queueRemoveToSync(cmd.Context(), item, positions); err != nil {
+			color.Yellow("⚠ Sync queue failed: %v", err)
+		}
+
 		if err := db.DeleteItem(dbConn, item.ID); err != nil {
 			return fmt.Errorf("failed to remove item: %w", err)
 		}
@@ -52,4 +65,36 @@ func init() {
 	removeCmd.Flags().Bool("confirm", false, "skip confirmation prompt")
 
 	rootCmd.AddCommand(removeCmd)
+}
+
+// queueRemoveToSync queues delete operations to vault if sync is configured.
+func queueRemoveToSync(ctx context.Context, item *models.Item, positions []*models.Position) error {
+	cfg, err := sync.LoadConfig()
+	if err != nil {
+		return nil // No config, skip silently
+	}
+
+	if !cfg.IsConfigured() {
+		return nil // Not configured, skip silently
+	}
+
+	syncer, err := sync.NewSyncer(cfg, dbConn)
+	if err != nil {
+		return fmt.Errorf("create syncer: %w", err)
+	}
+	defer func() { _ = syncer.Close() }()
+
+	// Queue position deletes first
+	for _, pos := range positions {
+		if err := syncer.QueuePositionChange(ctx, pos.ID, item.Name, pos.Latitude, pos.Longitude, pos.Label, pos.RecordedAt, vault.OpDelete); err != nil {
+			return fmt.Errorf("queue position delete: %w", err)
+		}
+	}
+
+	// Queue item delete
+	if err := syncer.QueueItemChange(ctx, item.ID, item.Name, vault.OpDelete); err != nil {
+		return fmt.Errorf("queue item delete: %w", err)
+	}
+
+	return nil
 }

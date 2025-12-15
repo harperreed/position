@@ -4,12 +4,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
+
+	"suitesync/vault"
 
 	"github.com/fatih/color"
 	"github.com/harper/position/internal/db"
 	"github.com/harper/position/internal/models"
+	"github.com/harper/position/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -64,6 +68,12 @@ Examples:
 			return fmt.Errorf("failed to create position: %w", err)
 		}
 
+		// Queue sync if configured
+		if err := queueAddToSync(cmd.Context(), item, pos); err != nil {
+			// Log but don't fail - local data is saved
+			color.Yellow("⚠ Sync queue failed: %v", err)
+		}
+
 		color.Green("✓ Added position for %s", name)
 		if label != nil {
 			fmt.Printf("  %s @ %s (%.4f, %.4f)\n",
@@ -89,4 +99,34 @@ func init() {
 	_ = addCmd.MarkFlagRequired("lng")
 
 	rootCmd.AddCommand(addCmd)
+}
+
+// queueAddToSync queues item and position changes to vault if sync is configured.
+func queueAddToSync(ctx context.Context, item *models.Item, pos *models.Position) error {
+	cfg, err := sync.LoadConfig()
+	if err != nil {
+		return nil // No config, skip silently
+	}
+
+	if !cfg.IsConfigured() {
+		return nil // Not configured, skip silently
+	}
+
+	syncer, err := sync.NewSyncer(cfg, dbConn)
+	if err != nil {
+		return fmt.Errorf("create syncer: %w", err)
+	}
+	defer func() { _ = syncer.Close() }()
+
+	// Queue item upsert
+	if err := syncer.QueueItemChange(ctx, item.ID, item.Name, vault.OpUpsert); err != nil {
+		return fmt.Errorf("queue item: %w", err)
+	}
+
+	// Queue position create
+	if err := syncer.QueuePositionChange(ctx, pos.ID, item.Name, pos.Latitude, pos.Longitude, pos.Label, pos.RecordedAt, vault.OpUpsert); err != nil {
+		return fmt.Errorf("queue position: %w", err)
+	}
+
+	return nil
 }

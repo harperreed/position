@@ -1,0 +1,335 @@
+// ABOUTME: Sync subcommand for vault integration
+// ABOUTME: Provides init, login, status, now, and logout commands for cloud sync
+
+package main
+
+import (
+	"bufio"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"strings"
+	"syscall"
+	"time"
+
+	"suitesync/vault"
+
+	"github.com/fatih/color"
+	"github.com/harper/position/internal/sync"
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+)
+
+var syncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Manage cloud sync for position data",
+	Long: `Sync your position data securely to the cloud using E2E encryption.
+
+Commands:
+  init    - Initialize sync configuration
+  login   - Login to sync server
+  status  - Show sync status
+  now     - Manually trigger sync
+  logout  - Clear authentication
+
+Examples:
+  position sync init
+  position sync login --server https://api.storeusa.org
+  position sync status
+  position sync now`,
+}
+
+var syncInitCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Initialize sync configuration",
+	Long:  `Creates a new sync configuration with a unique device ID.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if sync.ConfigExists() {
+			return fmt.Errorf("config already exists at %s\nUse 'position sync status' to view or delete the file to reinitialize", sync.ConfigPath())
+		}
+
+		cfg, err := sync.InitConfig()
+		if err != nil {
+			return fmt.Errorf("failed to initialize config: %w", err)
+		}
+
+		color.Green("✓ Sync initialized")
+		fmt.Printf("  Config: %s\n", sync.ConfigPath())
+		fmt.Printf("  Device: %s\n", cfg.DeviceID)
+		fmt.Println("\nNext: Run 'position sync login' to authenticate")
+
+		return nil
+	},
+}
+
+var syncLoginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Login to sync server",
+	Long: `Authenticate with the sync server using email, password, and recovery phrase.
+
+The recovery phrase is your BIP39 mnemonic that was given to you when you
+registered. Only the derived key is stored locally, not the mnemonic.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		server, _ := cmd.Flags().GetString("server")
+
+		cfg, _ := sync.LoadConfig()
+		if cfg == nil {
+			cfg = &sync.Config{}
+		}
+
+		serverURL := server
+		if serverURL == "" {
+			serverURL = cfg.Server
+		}
+		if serverURL == "" {
+			serverURL = "https://api.storeusa.org"
+		}
+
+		reader := bufio.NewReader(os.Stdin)
+
+		// Get email
+		fmt.Print("Email: ")
+		email, _ := reader.ReadString('\n')
+		email = strings.TrimSpace(email)
+		if email == "" {
+			return fmt.Errorf("email required")
+		}
+
+		// Get password
+		fmt.Print("Password: ")
+		passwordBytes, err := term.ReadPassword(syscall.Stdin)
+		fmt.Println()
+		if err != nil {
+			return fmt.Errorf("read password: %w", err)
+		}
+		password := string(passwordBytes)
+
+		// Get mnemonic
+		fmt.Print("\nEnter your recovery phrase:\n> ")
+		mnemonic, _ := reader.ReadString('\n')
+		mnemonic = strings.TrimSpace(mnemonic)
+
+		// Validate mnemonic
+		if _, err := vault.ParseMnemonic(mnemonic); err != nil {
+			return fmt.Errorf("invalid recovery phrase: %w", err)
+		}
+
+		// Login to server
+		fmt.Printf("\nLogging in to %s...\n", serverURL)
+		client := vault.NewPBAuthClient(serverURL)
+		result, err := client.Login(context.Background(), email, password)
+		if err != nil {
+			return fmt.Errorf("login failed: %w", err)
+		}
+
+		// Derive key from mnemonic (we only store the derived key, not the mnemonic)
+		seed, err := vault.ParseSeedPhrase(mnemonic)
+		if err != nil {
+			return fmt.Errorf("parse mnemonic: %w", err)
+		}
+		derivedKeyHex := hex.EncodeToString(seed.Raw)
+
+		// Save config
+		cfg.Server = serverURL
+		cfg.UserID = result.UserID
+		cfg.Token = result.Token.Token
+		cfg.RefreshToken = result.RefreshToken
+		cfg.TokenExpires = result.Token.Expires.Format(time.RFC3339)
+		cfg.DerivedKey = derivedKeyHex
+		if cfg.DeviceID == "" {
+			cfg.DeviceID = randHex(16)
+		}
+		if cfg.VaultDB == "" {
+			cfg.VaultDB = sync.ConfigDir() + "/vault.db"
+		}
+
+		if err := sync.SaveConfig(cfg); err != nil {
+			return fmt.Errorf("save config: %w", err)
+		}
+
+		color.Green("\n✓ Logged in to position sync")
+		fmt.Printf("Token expires: %s\n", result.Token.Expires.Format(time.RFC3339))
+
+		return nil
+	},
+}
+
+var syncStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show sync status",
+	Long:  `Display current sync configuration and authentication status.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := sync.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		fmt.Printf("Config:    %s\n", sync.ConfigPath())
+		fmt.Printf("Server:    %s\n", valueOrNone(cfg.Server))
+		fmt.Printf("User ID:   %s\n", valueOrNone(cfg.UserID))
+		fmt.Printf("Device ID: %s\n", valueOrNone(cfg.DeviceID))
+		fmt.Printf("Vault DB:  %s\n", valueOrNone(cfg.VaultDB))
+		fmt.Printf("Auto-sync: %v\n", cfg.AutoSync)
+
+		if cfg.DerivedKey != "" {
+			fmt.Println("Keys:      " + color.GreenString("✓ configured"))
+		} else {
+			fmt.Println("Keys:      " + color.YellowString("(not set)"))
+		}
+
+		printTokenStatus(cfg)
+
+		// Show pending changes if configured
+		if cfg.IsConfigured() {
+			syncer, err := sync.NewSyncer(cfg, dbConn)
+			if err == nil {
+				defer func() { _ = syncer.Close() }()
+				pending, err := syncer.PendingCount(context.Background())
+				if err == nil {
+					fmt.Printf("\nPending:   %d changes\n", pending)
+				}
+			}
+		}
+
+		return nil
+	},
+}
+
+var syncNowCmd = &cobra.Command{
+	Use:   "now",
+	Short: "Manually trigger sync",
+	Long:  `Push local changes and pull remote changes from the sync server.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := sync.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		if !cfg.IsConfigured() {
+			return fmt.Errorf("sync not configured - run 'position sync login' first")
+		}
+
+		syncer, err := sync.NewSyncer(cfg, dbConn)
+		if err != nil {
+			return fmt.Errorf("create syncer: %w", err)
+		}
+		defer func() { _ = syncer.Close() }()
+
+		fmt.Println("Syncing...")
+		if err := syncer.Sync(context.Background()); err != nil {
+			return fmt.Errorf("sync failed: %w", err)
+		}
+
+		color.Green("✓ Sync complete")
+		return nil
+	},
+}
+
+var syncLogoutCmd = &cobra.Command{
+	Use:   "logout",
+	Short: "Clear authentication",
+	Long:  `Remove auth tokens from config. The derived key is preserved for re-login.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := sync.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		if cfg.Token == "" {
+			fmt.Println("Not logged in")
+			return nil
+		}
+
+		cfg.Token = ""
+		cfg.RefreshToken = ""
+		cfg.TokenExpires = ""
+
+		if err := sync.SaveConfig(cfg); err != nil {
+			return fmt.Errorf("save config: %w", err)
+		}
+
+		color.Green("✓ Logged out successfully")
+		return nil
+	},
+}
+
+func init() {
+	syncLoginCmd.Flags().String("server", "", "sync server URL (default: https://api.storeusa.org)")
+
+	syncCmd.AddCommand(syncInitCmd)
+	syncCmd.AddCommand(syncLoginCmd)
+	syncCmd.AddCommand(syncStatusCmd)
+	syncCmd.AddCommand(syncNowCmd)
+	syncCmd.AddCommand(syncLogoutCmd)
+
+	rootCmd.AddCommand(syncCmd)
+}
+
+// valueOrNone returns "(not set)" if the string is empty.
+func valueOrNone(s string) string {
+	if s == "" {
+		return "(not set)"
+	}
+	return s
+}
+
+// printTokenStatus displays token validity information.
+func printTokenStatus(cfg *sync.Config) {
+	if cfg.Token == "" {
+		fmt.Println("\nStatus:    " + color.YellowString("Not logged in"))
+		return
+	}
+
+	fmt.Println()
+	if cfg.TokenExpires == "" {
+		fmt.Println("Token:     valid (no expiry info)")
+		return
+	}
+
+	expires, err := time.Parse(time.RFC3339, cfg.TokenExpires)
+	if err != nil {
+		fmt.Printf("Token:     valid (invalid expiry: %v)\n", err)
+		return
+	}
+
+	now := time.Now()
+	if expires.Before(now) {
+		fmt.Print("Token:     ")
+		color.Red("EXPIRED (%s ago)", now.Sub(expires).Round(time.Second))
+		fmt.Println()
+		if cfg.RefreshToken != "" {
+			fmt.Println("           (has refresh token - run 'position sync now' to refresh)")
+		}
+	} else {
+		fmt.Print("Token:     ")
+		color.Green("valid")
+		fmt.Printf(" (expires in %s)\n", formatDuration(expires.Sub(now)))
+	}
+}
+
+// formatDuration formats a duration in a human-readable way.
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	h := d / time.Hour
+	d -= h * time.Hour
+	m := d / time.Minute
+	d -= m * time.Minute
+	s := d / time.Second
+
+	if h > 0 {
+		return fmt.Sprintf("%dh %dm", h, m)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
+// randHex returns n random bytes hex-encoded (2n chars).
+func randHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
