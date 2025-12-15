@@ -13,7 +13,7 @@ require (
 	suitesync v0.0.0-00010101000000-000000000000
 )
 
-replace suitesync => github.com/harperreed/sweet v0.0.0-20251215134823-2aa2446f87c9
+replace suitesync => github.com/harperreed/sweet v0.1.3
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
