@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 
 	"github.com/fatih/color"
 	"github.com/harper/position/internal/sync"
@@ -89,6 +89,11 @@ registered. Only the derived key is stored locally, not the mnemonic.`,
 
 		reader := bufio.NewReader(os.Stdin)
 
+		// Ensure we have a device ID before login (required for v0.3.0 device registration)
+		if cfg.DeviceID == "" {
+			cfg.DeviceID = randHex(16)
+		}
+
 		// Get email
 		fmt.Print("Email: ")
 		email, _ := reader.ReadString('\n')
@@ -116,10 +121,11 @@ registered. Only the derived key is stored locally, not the mnemonic.`,
 			return fmt.Errorf("invalid recovery phrase: %w", err)
 		}
 
-		// Login to server
+		// Login to server with device registration (v0.3.0)
 		fmt.Printf("\nLogging in to %s...\n", serverURL)
+		fmt.Printf("Registering device %s...\n", cfg.DeviceID[:8]+"...")
 		client := vault.NewPBAuthClient(serverURL)
-		result, err := client.Login(context.Background(), email, password)
+		result, err := client.Login(context.Background(), email, password, cfg.DeviceID)
 		if err != nil {
 			return fmt.Errorf("login failed: %w", err)
 		}
@@ -138,9 +144,7 @@ registered. Only the derived key is stored locally, not the mnemonic.`,
 		cfg.RefreshToken = result.RefreshToken
 		cfg.TokenExpires = result.Token.Expires.Format(time.RFC3339)
 		cfg.DerivedKey = derivedKeyHex
-		if cfg.DeviceID == "" {
-			cfg.DeviceID = randHex(16)
-		}
+		// DeviceID already set before login
 		if cfg.VaultDB == "" {
 			cfg.VaultDB = sync.ConfigDir() + "/vault.db"
 		}
@@ -257,6 +261,16 @@ var syncNowCmd = &cobra.Command{
 		}
 
 		if err := syncer.SyncWithEvents(ctx, events); err != nil {
+			// Check for device-related errors (v0.3.0 device validation)
+			errStr := err.Error()
+			if strings.Contains(errStr, "device") || strings.Contains(errStr, "403") {
+				color.Red("Device validation failed!")
+				fmt.Println("\nPossible causes:")
+				fmt.Println("  - Device not registered (run 'position sync login' again)")
+				fmt.Println("  - Device was revoked (use a fresh login with new device ID)")
+				fmt.Println("  - Missing X-Vault-Device-ID header")
+				return fmt.Errorf("device error: %w", err)
+			}
 			return fmt.Errorf("sync failed: %w", err)
 		}
 
@@ -375,6 +389,7 @@ After wipe, run 'position sync now' to re-push local data.`,
 		// Wipe server-side data
 		fmt.Println("\nWiping server data...")
 		client := vault.NewClient(vault.SyncConfig{
+			AppID:     sync.AppID,
 			BaseURL:   cfg.Server,
 			DeviceID:  cfg.DeviceID,
 			AuthToken: cfg.Token,

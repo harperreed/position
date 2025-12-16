@@ -11,12 +11,16 @@ import (
 	"fmt"
 	"time"
 
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 
 	"github.com/google/uuid"
 )
 
 const (
+	// AppID is the unique identifier for the position app.
+	// This ensures sync data is namespaced and can't interfere with other apps.
+	AppID = "1878377E-E32B-4DFE-97CC-F7EB3042046A"
+
 	EntityItem     = "item"
 	EntityPosition = "position"
 )
@@ -53,6 +57,7 @@ func NewSyncer(cfg *Config, appDB *sql.DB) (*Syncer, error) {
 	}
 
 	client := vault.NewClient(vault.SyncConfig{
+		AppID:     AppID,
 		BaseURL:   cfg.Server,
 		DeviceID:  cfg.DeviceID,
 		AuthToken: cfg.Token,

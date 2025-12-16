@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 
 	"github.com/fatih/color"
 	"github.com/harper/position/internal/db"
