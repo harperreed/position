@@ -337,6 +337,68 @@ var syncPendingCmd = &cobra.Command{
 	},
 }
 
+var syncWipeCmd = &cobra.Command{
+	Use:   "wipe",
+	Short: "Wipe all sync data and start fresh",
+	Long: `Clear all server-side sync data and local vault database.
+
+This is useful when:
+- Sync data becomes corrupted
+- You changed userID/AAD strategy mid-stream
+- You want to start fresh during development
+
+After wipe, run 'position sync now' to re-push local data.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := sync.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		if !cfg.IsConfigured() {
+			return fmt.Errorf("sync not configured - run 'position sync login' first")
+		}
+
+		// Confirm with user
+		fmt.Println("This will DELETE all sync data on the server and locally.")
+		fmt.Println("Your local position data will NOT be affected.")
+		fmt.Print("\nType 'wipe' to confirm: ")
+
+		reader := bufio.NewReader(os.Stdin)
+		confirmation, _ := reader.ReadString('\n')
+		confirmation = strings.TrimSpace(confirmation)
+
+		if confirmation != "wipe" {
+			fmt.Println("Aborted.")
+			return nil
+		}
+
+		// Wipe server-side data
+		fmt.Println("\nWiping server data...")
+		client := vault.NewClient(vault.SyncConfig{
+			BaseURL:   cfg.Server,
+			DeviceID:  cfg.DeviceID,
+			AuthToken: cfg.Token,
+		})
+
+		ctx := context.Background()
+		deleted, err := client.Wipe(ctx)
+		if err != nil {
+			return fmt.Errorf("wipe server data: %w", err)
+		}
+		color.Green("✓ Server data wiped (%d records deleted)", deleted)
+
+		// Remove local vault.db
+		fmt.Println("Removing local vault database...")
+		if err := os.Remove(cfg.VaultDB); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove vault.db: %w", err)
+		}
+		color.Green("✓ Local vault.db removed")
+
+		fmt.Println("\nSync data cleared. Run 'position sync now' to re-push local data.")
+		return nil
+	},
+}
+
 func init() {
 	syncLoginCmd.Flags().String("server", "", "sync server URL (default: https://api.storeusa.org)")
 	syncNowCmd.Flags().BoolP("verbose", "v", false, "show detailed sync information")
@@ -347,6 +409,7 @@ func init() {
 	syncCmd.AddCommand(syncNowCmd)
 	syncCmd.AddCommand(syncLogoutCmd)
 	syncCmd.AddCommand(syncPendingCmd)
+	syncCmd.AddCommand(syncWipeCmd)
 
 	rootCmd.AddCommand(syncCmd)
 }
