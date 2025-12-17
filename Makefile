@@ -1,4 +1,4 @@
-.PHONY: build test test-race lint clean install coverage check
+.PHONY: build test test-race test-coverage lint clean install coverage check
 
 build:
 	go build -o position ./cmd/position
@@ -8,6 +8,9 @@ test:
 
 test-race:
 	go test -race -v ./...
+
+test-coverage:
+	go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
 lint:
 	golangci-lint run
