@@ -24,11 +24,14 @@ type Config struct {
 	DerivedKey   string `json:"derived_key"`
 	DeviceID     string `json:"device_id"`
 	VaultDB      string `json:"vault_db"`
-	AutoSync     bool   `json:"auto_sync"`
 }
 
 // ConfigPath returns the path to the sync config file.
+// Respects XDG_CONFIG_HOME if set, otherwise falls back to ~/.config.
 func ConfigPath() string {
+	if xdgConfig := os.Getenv("XDG_CONFIG_HOME"); xdgConfig != "" {
+		return filepath.Join(xdgConfig, "position", "sync.json")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return filepath.Join(os.TempDir(), ".position", "sync.json")
@@ -117,9 +120,6 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if deviceID := os.Getenv("POSITION_DEVICE_ID"); deviceID != "" {
 		cfg.DeviceID = deviceID
-	}
-	if autoSync := os.Getenv("POSITION_AUTO_SYNC"); autoSync == "1" || autoSync == "true" {
-		cfg.AutoSync = true
 	}
 }
 

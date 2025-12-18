@@ -166,7 +166,22 @@ never sees your data in plaintext.`,
 		fmt.Printf("  User ID: %s\n", cfg.UserID)
 		fmt.Printf("  Device: %s\n", cfg.DeviceID[:8]+"...")
 		fmt.Printf("  Token expires: %s\n", result.Token.Expires.Format(time.RFC3339))
-		fmt.Printf("\nRun 'position sync now' to sync your data.\n")
+
+		// Sync immediately after login to pull existing data
+		fmt.Println("\nSyncing...")
+		syncer, err := sync.NewSyncer(cfg, dbConn)
+		if err != nil {
+			color.Yellow("⚠ Could not initialize sync: %v", err)
+			return nil
+		}
+		defer func() { _ = syncer.Close() }()
+
+		ctx := context.Background()
+		if err := syncer.Sync(ctx); err != nil {
+			color.Yellow("⚠ Sync failed: %v", err)
+		} else {
+			color.Green("✓ Sync complete")
+		}
 
 		return nil
 	},
@@ -187,7 +202,6 @@ var syncStatusCmd = &cobra.Command{
 		fmt.Printf("User ID:   %s\n", valueOrNone(cfg.UserID))
 		fmt.Printf("Device ID: %s\n", valueOrNone(cfg.DeviceID))
 		fmt.Printf("Vault DB:  %s\n", valueOrNone(cfg.VaultDB))
-		fmt.Printf("Auto-sync: %v\n", cfg.AutoSync)
 
 		if cfg.DerivedKey != "" {
 			fmt.Println("Keys:      " + color.GreenString("✓ configured"))

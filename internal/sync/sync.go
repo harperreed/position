@@ -80,14 +80,16 @@ func NewSyncer(cfg *Config, appDB *sql.DB) (*Syncer, error) {
 		},
 	})
 
-	return &Syncer{
-		config:      cfg,
-		store:       store,
-		keys:        keys,
-		client:      client,
-		vaultSyncer: vault.NewSyncer(store, client, keys, cfg.UserID),
-		appDB:       appDB,
-	}, nil
+	syncer := &Syncer{
+		config: cfg,
+		store:  store,
+		keys:   keys,
+		client: client,
+		appDB:  appDB,
+	}
+	// Pass applyChange to vault syncer so QueueAndSync can auto-sync
+	syncer.vaultSyncer = vault.NewSyncer(store, client, keys, cfg.UserID, syncer.applyChange)
+	return syncer, nil
 }
 
 // Close releases syncer resources.
@@ -134,20 +136,12 @@ func (s *Syncer) queueChange(ctx context.Context, entity, entityID string, op va
 		return errors.New("vault sync not configured")
 	}
 
-	if _, err := s.vaultSyncer.QueueChange(ctx, entity, entityID, op, payload); err != nil {
+	// QueueAndSync queues locally then auto-syncs if configured
+	if _, err := s.vaultSyncer.QueueAndSync(ctx, entity, entityID, op, payload); err != nil {
 		return fmt.Errorf("queue change: %w", err)
 	}
 
-	// Auto-sync if enabled
-	if s.config.AutoSync && s.canSync() {
-		return s.Sync(ctx)
-	}
-
 	return nil
-}
-
-func (s *Syncer) canSync() bool {
-	return s.config.Server != "" && s.config.Token != "" && s.config.UserID != ""
 }
 
 // Sync pushes local changes and pulls remote changes.
@@ -157,11 +151,11 @@ func (s *Syncer) Sync(ctx context.Context) error {
 
 // SyncWithEvents pushes local changes and pulls remote changes with progress callbacks.
 func (s *Syncer) SyncWithEvents(ctx context.Context, events *vault.SyncEvents) error {
-	if !s.canSync() {
+	if !s.vaultSyncer.CanSync() {
 		return errors.New("sync not configured - run 'position sync login' first")
 	}
 
-	return vault.Sync(ctx, s.store, s.client, s.keys, s.config.UserID, s.applyChange, events)
+	return s.vaultSyncer.Sync(ctx, events)
 }
 
 // applyChange applies a remote change to the local database.
@@ -251,11 +245,7 @@ func (s *Syncer) applyPositionChange(ctx context.Context, c vault.Change) error 
 
 // PendingCount returns the number of changes waiting to be synced.
 func (s *Syncer) PendingCount(ctx context.Context) (int, error) {
-	batch, err := s.store.DequeueBatch(ctx, 1000)
-	if err != nil {
-		return 0, err
-	}
-	return len(batch), nil
+	return s.store.PendingCount(ctx)
 }
 
 // PendingItem represents a change waiting to be synced.

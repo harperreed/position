@@ -16,6 +16,8 @@ import (
 )
 
 // setupTestSyncerWithDB creates a test syncer and returns both the syncer and appDB.
+// This helper does NOT configure server credentials, so canSync() returns false
+// and tests don't attempt network operations.
 func setupTestSyncerWithDB(t *testing.T) (*Syncer, *sql.DB, func()) {
 	t.Helper()
 
@@ -27,13 +29,11 @@ func setupTestSyncerWithDB(t *testing.T) (*Syncer, *sql.DB, func()) {
 	require.NoError(t, err)
 
 	cfg := &Config{
-		Server:     "https://test.example.com",
-		UserID:     "test-user",
-		Token:      "test-token",
+		// Server, UserID, Token intentionally not set so canSync() returns false
+		// This allows testing local queueing without network operations
 		DerivedKey: phrase,
 		DeviceID:   "test-device",
 		VaultDB:    filepath.Join(tmpDir, "vault.db"),
-		AutoSync:   false,
 	}
 
 	syncer, err := NewSyncer(cfg, database)
@@ -49,6 +49,8 @@ func setupTestSyncerWithDB(t *testing.T) (*Syncer, *sql.DB, func()) {
 }
 
 // setupTestSyncer creates a test syncer (legacy helper for existing tests).
+// This helper does NOT configure server credentials, so canSync() returns false
+// and tests don't attempt network operations.
 func setupTestSyncer(t *testing.T) *Syncer {
 	t.Helper()
 	tmpDir := t.TempDir()
@@ -60,13 +62,11 @@ func setupTestSyncer(t *testing.T) *Syncer {
 	require.NoError(t, err)
 
 	cfg := &Config{
-		Server:     "https://test.example.com",
-		UserID:     "test-user",
-		Token:      "test-token",
+		// Server, UserID, Token intentionally not set so canSync() returns false
+		// This allows testing local queueing without network operations
 		DerivedKey: phrase,
 		DeviceID:   "test-device",
 		VaultDB:    filepath.Join(tmpDir, "vault.db"),
-		AutoSync:   false,
 	}
 
 	syncer, err := NewSyncer(cfg, appDB)
