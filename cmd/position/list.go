@@ -6,7 +6,6 @@ package main
 import (
 	"fmt"
 
-	"github.com/harper/position/internal/db"
 	"github.com/harper/position/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +15,7 @@ var listCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List all tracked items",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		items, err := db.ListItems(dbConn)
+		items, err := charmClient.ListItems()
 		if err != nil {
 			return fmt.Errorf("failed to list items: %w", err)
 		}
@@ -27,7 +26,7 @@ var listCmd = &cobra.Command{
 		}
 
 		for _, item := range items {
-			pos, _ := db.GetCurrentPosition(dbConn, item.ID)
+			pos, _ := charmClient.GetCurrentPosition(item.ID)
 			fmt.Println(ui.FormatItemWithPosition(item, pos))
 		}
 

@@ -6,10 +6,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/harper/position/internal/db"
+	"github.com/harper/position/internal/charm"
 	"github.com/harper/position/internal/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -78,11 +79,15 @@ func (s *Server) handleAddPosition(_ context.Context, req *mcp.CallToolRequest, 
 		return nil, PositionOutput{}, err
 	}
 
-	item, err := db.GetItemByName(s.db, input.Name)
+	item, err := s.client.GetItemByName(input.Name)
 	if err != nil {
-		item = models.NewItem(input.Name)
-		if err := db.CreateItem(s.db, item); err != nil {
-			return nil, PositionOutput{}, fmt.Errorf("failed to create item: %w", err)
+		if errors.Is(err, charm.ErrNotFound) {
+			item = models.NewItem(input.Name)
+			if err := s.client.CreateItem(item); err != nil {
+				return nil, PositionOutput{}, fmt.Errorf("failed to create item: %w", err)
+			}
+		} else {
+			return nil, PositionOutput{}, fmt.Errorf("failed to get item: %w", err)
 		}
 	}
 
@@ -97,7 +102,7 @@ func (s *Server) handleAddPosition(_ context.Context, req *mcp.CallToolRequest, 
 		pos = models.NewPosition(item.ID, input.Latitude, input.Longitude, input.Label)
 	}
 
-	if err := db.CreatePosition(s.db, pos); err != nil {
+	if err := s.client.CreatePosition(pos); err != nil {
 		return nil, PositionOutput{}, fmt.Errorf("failed to create position: %w", err)
 	}
 
@@ -138,12 +143,12 @@ func (s *Server) registerGetCurrentTool() {
 }
 
 func (s *Server) handleGetCurrent(_ context.Context, req *mcp.CallToolRequest, input GetCurrentInput) (*mcp.CallToolResult, PositionOutput, error) {
-	item, err := db.GetItemByName(s.db, input.Name)
+	item, err := s.client.GetItemByName(input.Name)
 	if err != nil {
 		return nil, PositionOutput{}, fmt.Errorf("item '%s' not found", input.Name)
 	}
 
-	pos, err := db.GetCurrentPosition(s.db, item.ID)
+	pos, err := s.client.GetCurrentPosition(item.ID)
 	if err != nil {
 		return nil, PositionOutput{}, fmt.Errorf("no position found for '%s'", input.Name)
 	}
@@ -187,12 +192,12 @@ func (s *Server) registerGetTimelineTool() {
 }
 
 func (s *Server) handleGetTimeline(_ context.Context, req *mcp.CallToolRequest, input GetCurrentInput) (*mcp.CallToolResult, TimelineOutput, error) {
-	item, err := db.GetItemByName(s.db, input.Name)
+	item, err := s.client.GetItemByName(input.Name)
 	if err != nil {
 		return nil, TimelineOutput{}, fmt.Errorf("item '%s' not found", input.Name)
 	}
 
-	positions, err := db.GetTimeline(s.db, item.ID)
+	positions, err := s.client.GetTimeline(item.ID)
 	if err != nil {
 		return nil, TimelineOutput{}, fmt.Errorf("failed to get timeline: %w", err)
 	}
@@ -246,7 +251,7 @@ func (s *Server) registerListItemsTool() {
 }
 
 func (s *Server) handleListItems(_ context.Context, req *mcp.CallToolRequest, input ListItemsInput) (*mcp.CallToolResult, ListItemsOutput, error) {
-	items, err := db.ListItems(s.db)
+	items, err := s.client.ListItems()
 	if err != nil {
 		return nil, ListItemsOutput{}, fmt.Errorf("failed to list items: %w", err)
 	}
@@ -255,7 +260,7 @@ func (s *Server) handleListItems(_ context.Context, req *mcp.CallToolRequest, in
 	for i, item := range items {
 		itemOutputs[i] = ItemOutput{Name: item.Name}
 
-		pos, err := db.GetCurrentPosition(s.db, item.ID)
+		pos, err := s.client.GetCurrentPosition(item.ID)
 		if err == nil {
 			itemOutputs[i].CurrentPosition = &PositionOutput{
 				ItemName:   item.Name,
@@ -307,12 +312,12 @@ func (s *Server) registerRemoveItemTool() {
 }
 
 func (s *Server) handleRemoveItem(_ context.Context, req *mcp.CallToolRequest, input RemoveItemInput) (*mcp.CallToolResult, RemoveItemOutput, error) {
-	item, err := db.GetItemByName(s.db, input.Name)
+	item, err := s.client.GetItemByName(input.Name)
 	if err != nil {
 		return nil, RemoveItemOutput{}, fmt.Errorf("item '%s' not found", input.Name)
 	}
 
-	if err := db.DeleteItem(s.db, item.ID); err != nil {
+	if err := s.client.DeleteItem(item.ID); err != nil {
 		return nil, RemoveItemOutput{}, fmt.Errorf("failed to remove item: %w", err)
 	}
 

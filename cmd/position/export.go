@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/harper/position/internal/db"
 	"github.com/harper/position/internal/geojson"
 	"github.com/harper/position/internal/models"
 	"github.com/spf13/cobra"
@@ -83,7 +82,7 @@ Examples:
 		}
 
 		// Build item name cache for resolving IDs to names
-		items, err := db.ListItems(dbConn)
+		items, err := charmClient.ListItems()
 		if err != nil {
 			return fmt.Errorf("failed to list items: %w", err)
 		}
@@ -100,7 +99,7 @@ Examples:
 		if len(args) == 1 {
 			// Export single item
 			name := args[0]
-			item, err := db.GetItemByName(dbConn, name)
+			item, err := charmClient.GetItemByName(name)
 			if err != nil {
 				return fmt.Errorf("item '%s' not found", name)
 			}
@@ -151,16 +150,16 @@ Examples:
 
 func getPositionsForItem(item *models.Item, since, from, to time.Time) ([]*models.Position, error) {
 	if !since.IsZero() {
-		return db.GetPositionsSince(dbConn, item.ID, since)
+		return charmClient.GetPositionsSince(item.ID, since)
 	}
 	if !from.IsZero() && !to.IsZero() {
-		return db.GetPositionsInRange(dbConn, item.ID, from, to)
+		return charmClient.GetPositionsInRange(item.ID, from, to)
 	}
 	if !from.IsZero() {
-		return db.GetPositionsSince(dbConn, item.ID, from)
+		return charmClient.GetPositionsSince(item.ID, from)
 	}
 	// No time filter - get all (use timeline which is DESC, but we want ASC)
-	positions, err := db.GetTimeline(dbConn, item.ID)
+	positions, err := charmClient.GetTimeline(item.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,15 +172,15 @@ func getPositionsForItem(item *models.Item, since, from, to time.Time) ([]*model
 
 func getAllPositions(since, from, to time.Time) ([]*models.Position, error) {
 	if !since.IsZero() {
-		return db.GetAllPositionsSince(dbConn, since)
+		return charmClient.GetAllPositionsSince(since)
 	}
 	if !from.IsZero() && !to.IsZero() {
-		return db.GetAllPositionsInRange(dbConn, from, to)
+		return charmClient.GetAllPositionsInRange(from, to)
 	}
 	if !from.IsZero() {
-		return db.GetAllPositionsSince(dbConn, from)
+		return charmClient.GetAllPositionsSince(from)
 	}
-	return db.GetAllPositions(dbConn)
+	return charmClient.GetAllPositions()
 }
 
 // parseDuration parses relative duration strings like "24h", "7d", "1w".

@@ -1,377 +1,124 @@
-// ABOUTME: Sync subcommand for vault integration
-// ABOUTME: Provides init, login, status, now, and logout commands for cloud sync
+// ABOUTME: Sync subcommand for Charm cloud sync
+// ABOUTME: Provides status, link, unlink, and wipe commands
 
 package main
 
 import (
 	"bufio"
-	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
-	"syscall"
-	"time"
 
-	"github.com/harperreed/sweet/vault"
-
+	"github.com/charmbracelet/charm/client"
 	"github.com/fatih/color"
-	"github.com/harper/position/internal/sync"
+	"github.com/harper/position/internal/charm"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Manage cloud sync for position data",
-	Long: `Sync your position data securely to the cloud using E2E encryption.
+	Long: `Sync your position data with Charm Cloud using SSH key authentication.
 
 Commands:
-  init    - Initialize sync configuration
-  login   - Login to sync server
-  status  - Show sync status
-  now     - Manually trigger sync
-  logout  - Clear authentication
+  status  - Show sync status and user info
+  link    - Link this device to your Charm account
+  unlink  - Unlink this device from your account
+  wipe    - Clear all local data and start fresh
+
+Data syncs automatically on every write operation.
 
 Examples:
-  position sync init
-  position sync login --server https://api.storeusa.org
   position sync status
-  position sync now`,
-}
-
-var syncInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize sync configuration",
-	Long:  `Creates a new sync configuration with a unique device ID.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if sync.ConfigExists() {
-			return fmt.Errorf("config already exists at %s\nUse 'position sync status' to view or delete the file to reinitialize", sync.ConfigPath())
-		}
-
-		cfg, err := sync.InitConfig()
-		if err != nil {
-			return fmt.Errorf("failed to initialize config: %w", err)
-		}
-
-		color.Green("✓ Sync initialized")
-		fmt.Printf("  Config: %s\n", sync.ConfigPath())
-		fmt.Printf("  Device: %s\n", cfg.DeviceID)
-		fmt.Println("\nNext: Run 'position sync login' to authenticate")
-
-		return nil
-	},
-}
-
-var syncLoginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Login to sync server",
-	Long: `Login to sync service with your credentials and recovery phrase.
-
-Your recovery phrase is used to derive encryption keys - the server
-never sees your data in plaintext.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		server, _ := cmd.Flags().GetString("server")
-
-		cfg, _ := sync.LoadConfig()
-		if cfg == nil {
-			cfg = &sync.Config{}
-		}
-
-		serverURL := server
-		if serverURL == "" {
-			serverURL = cfg.Server
-		}
-		if serverURL == "" {
-			serverURL = "https://api.storeusa.org"
-		}
-
-		reader := bufio.NewReader(os.Stdin)
-
-		// Ensure we have a device ID before login (required for v0.3.0 device registration)
-		if cfg.DeviceID == "" {
-			cfg.DeviceID = randHex(16)
-		}
-
-		// Get email
-		fmt.Print("Email: ")
-		email, _ := reader.ReadString('\n')
-		email = strings.TrimSpace(email)
-		if email == "" {
-			return fmt.Errorf("email required")
-		}
-
-		// Get password
-		fmt.Print("Password: ")
-		passwordBytes, err := term.ReadPassword(syscall.Stdin)
-		fmt.Println()
-		if err != nil {
-			return fmt.Errorf("read password: %w", err)
-		}
-		password := string(passwordBytes)
-		if password == "" {
-			return fmt.Errorf("password cannot be empty")
-		}
-
-		// Get mnemonic
-		fmt.Print("Recovery phrase (12 or 24 words): ")
-		mnemonic, _ := reader.ReadString('\n')
-		mnemonic = strings.TrimSpace(mnemonic)
-
-		// Validate mnemonic
-		parsed, err := vault.ParseMnemonic(mnemonic)
-		if err != nil {
-			return fmt.Errorf("invalid recovery phrase: must be 12 or 24 words")
-		}
-		// Verify it's actually 12 or 24 words
-		wordCount := len(strings.Fields(mnemonic))
-		if wordCount != 12 && wordCount != 24 {
-			return fmt.Errorf("invalid recovery phrase: must be 12 or 24 words")
-		}
-		_ = parsed
-
-		// Login to server with device registration (v0.3.0)
-		fmt.Printf("\nLogging in to %s...\n", serverURL)
-		client := vault.NewPBAuthClient(serverURL)
-		result, err := client.Login(context.Background(), email, password, cfg.DeviceID)
-		if err != nil {
-			return fmt.Errorf("login failed: %w", err)
-		}
-
-		// Derive key from mnemonic (we only store the derived key, not the mnemonic)
-		seed, err := vault.ParseSeedPhrase(mnemonic)
-		if err != nil {
-			return fmt.Errorf("parse mnemonic: %w", err)
-		}
-		derivedKeyHex := hex.EncodeToString(seed.Raw)
-
-		// Save config
-		cfg.Server = serverURL
-		cfg.UserID = result.UserID
-		cfg.Token = result.Token.Token
-		cfg.RefreshToken = result.RefreshToken
-		cfg.TokenExpires = result.Token.Expires.Format(time.RFC3339)
-		cfg.DerivedKey = derivedKeyHex
-		// DeviceID already set before login
-		if cfg.VaultDB == "" {
-			cfg.VaultDB = sync.ConfigDir() + "/vault.db"
-		}
-
-		if err := sync.SaveConfig(cfg); err != nil {
-			return fmt.Errorf("save config: %w", err)
-		}
-
-		color.Green("\n✓ Logged in successfully")
-		fmt.Printf("  User ID: %s\n", cfg.UserID)
-		fmt.Printf("  Device: %s\n", cfg.DeviceID[:8]+"...")
-		fmt.Printf("  Token expires: %s\n", result.Token.Expires.Format(time.RFC3339))
-
-		// Sync immediately after login to pull existing data
-		fmt.Println("\nSyncing...")
-		syncer, err := sync.NewSyncer(cfg, dbConn)
-		if err != nil {
-			color.Yellow("⚠ Could not initialize sync: %v", err)
-			return nil
-		}
-		defer func() { _ = syncer.Close() }()
-
-		ctx := context.Background()
-		if err := syncer.Sync(ctx); err != nil {
-			color.Yellow("⚠ Sync failed: %v", err)
-		} else {
-			color.Green("✓ Sync complete")
-		}
-
-		return nil
-	},
+  position sync link
+  position sync wipe`,
 }
 
 var syncStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show sync status",
-	Long:  `Display current sync configuration and authentication status.`,
+	Long:  `Display current sync configuration, user ID, and connection status.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := sync.LoadConfig()
+		cfg := charm.DefaultConfig()
+
+		fmt.Printf("Charm Host: %s\n", cfg.CharmHost)
+		fmt.Printf("Database:   %s\n", charm.DBName)
+
+		// Get user info from charm client
+		cc, err := client.NewClientWithDefaults()
 		if err != nil {
-			return fmt.Errorf("load config: %w", err)
+			color.Yellow("\nStatus: Not connected")
+			fmt.Println("Run 'position sync link' to connect your account.")
+			return nil
 		}
 
-		fmt.Printf("Config:    %s\n", sync.ConfigPath())
-		fmt.Printf("Server:    %s\n", valueOrNone(cfg.Server))
-		fmt.Printf("User ID:   %s\n", valueOrNone(cfg.UserID))
-		fmt.Printf("Device ID: %s\n", valueOrNone(cfg.DeviceID))
-		fmt.Printf("Vault DB:  %s\n", valueOrNone(cfg.VaultDB))
-
-		if cfg.DerivedKey != "" {
-			fmt.Println("Keys:      " + color.GreenString("✓ configured"))
-		} else {
-			fmt.Println("Keys:      " + color.YellowString("(not set)"))
+		user, err := cc.ID()
+		if err != nil {
+			color.Yellow("\nStatus: Not linked")
+			fmt.Println("Run 'position sync link' to connect your account.")
+			return nil
 		}
 
-		printTokenStatus(cfg)
-
-		// Show sync state if configured
-		if cfg.IsConfigured() {
-			syncer, err := sync.NewSyncer(cfg, dbConn)
-			if err == nil {
-				defer func() { _ = syncer.Close() }()
-				ctx := context.Background()
-
-				pending, err := syncer.PendingCount(ctx)
-				if err == nil {
-					fmt.Print("\nPending:   ")
-					if pending == 0 {
-						color.Green("0 changes (up to date)")
-					} else {
-						color.Yellow("%d changes waiting to push", pending)
-					}
-					fmt.Println()
-				}
-
-				lastSeq, err := syncer.LastSyncedSeq(ctx)
-				if err == nil && lastSeq != "0" {
-					fmt.Printf("Last sync: seq %s\n", lastSeq)
-				}
-			}
-		}
+		fmt.Printf("\nUser ID: %s\n", user)
+		color.Green("Status: Connected")
+		fmt.Println("\nData syncs automatically on every write.")
 
 		return nil
 	},
 }
 
-var syncNowCmd = &cobra.Command{
-	Use:   "now",
-	Short: "Manually trigger sync",
-	Long:  `Push local changes and pull remote changes from the sync server.`,
+var syncLinkCmd = &cobra.Command{
+	Use:   "link",
+	Short: "Link this device to your Charm account",
+	Long: `Link this device to your Charm Cloud account.
+
+This opens the Charm linking flow which authenticates using SSH keys.
+If you don't have an account, one will be created automatically.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		verbose, _ := cmd.Flags().GetBool("verbose")
+		fmt.Println("Starting Charm link process...")
+		fmt.Println("This will open an interactive linking flow.")
+		fmt.Println()
 
-		cfg, err := sync.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("load config: %w", err)
+		// Run charm link command
+		linkCmd := exec.Command("charm", "link")
+		linkCmd.Stdin = os.Stdin
+		linkCmd.Stdout = os.Stdout
+		linkCmd.Stderr = os.Stderr
+
+		if err := linkCmd.Run(); err != nil {
+			// charm might not be installed
+			return fmt.Errorf("failed to run 'charm link': %w\nMake sure the charm CLI is installed: go install github.com/charmbracelet/charm@latest", err)
 		}
 
-		if !cfg.IsConfigured() {
-			return fmt.Errorf("sync not configured - run 'position sync login' first")
-		}
+		color.Green("\n✓ Device linked successfully")
+		fmt.Println("Position data will now sync automatically.")
 
-		syncer, err := sync.NewSyncer(cfg, dbConn)
-		if err != nil {
-			return fmt.Errorf("create syncer: %w", err)
-		}
-		defer func() { _ = syncer.Close() }()
-
-		ctx := context.Background()
-
-		var events *vault.SyncEvents
-		if verbose {
-			events = &vault.SyncEvents{
-				OnStart: func() {
-					fmt.Println("Syncing...")
-				},
-				OnPush: func(pushed, remaining int) {
-					fmt.Printf("  ↑ pushed %d changes (%d remaining)\n", pushed, remaining)
-				},
-				OnPull: func(pulled int) {
-					if pulled > 0 {
-						fmt.Printf("  ↓ pulled %d changes\n", pulled)
-					}
-				},
-				OnComplete: func(pushed, pulled int) {
-					fmt.Printf("  Total: %d pushed, %d pulled\n", pushed, pulled)
-				},
-			}
-		} else {
-			fmt.Println("Syncing...")
-		}
-
-		if err := syncer.SyncWithEvents(ctx, events); err != nil {
-			// Check for device-related errors (v0.3.0 device validation)
-			errStr := err.Error()
-			if strings.Contains(errStr, "device") || strings.Contains(errStr, "403") {
-				color.Red("Device validation failed!")
-				fmt.Println("\nPossible causes:")
-				fmt.Println("  - Device not registered (run 'position sync login' again)")
-				fmt.Println("  - Device was revoked (use a fresh login with new device ID)")
-				fmt.Println("  - Missing X-Vault-Device-ID header")
-				return fmt.Errorf("device error: %w", err)
-			}
-			return fmt.Errorf("sync failed: %w", err)
-		}
-
-		color.Green("✓ Sync complete")
 		return nil
 	},
 }
 
-var syncLogoutCmd = &cobra.Command{
-	Use:   "logout",
-	Short: "Clear authentication",
-	Long:  `Remove auth tokens from config. The derived key is preserved for re-login.`,
+var syncUnlinkCmd = &cobra.Command{
+	Use:   "unlink",
+	Short: "Unlink this device from your Charm account",
+	Long: `Unlink this device from your Charm Cloud account.
+
+This will stop syncing data but won't delete local data.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := sync.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("load config: %w", err)
+		fmt.Println("Unlinking device from Charm...")
+
+		// Run charm unlink command
+		unlinkCmd := exec.Command("charm", "unlink")
+		unlinkCmd.Stdin = os.Stdin
+		unlinkCmd.Stdout = os.Stdout
+		unlinkCmd.Stderr = os.Stderr
+
+		if err := unlinkCmd.Run(); err != nil {
+			return fmt.Errorf("failed to run 'charm unlink': %w", err)
 		}
 
-		if cfg.Token == "" {
-			fmt.Println("Not logged in")
-			return nil
-		}
-
-		cfg.Token = ""
-		cfg.RefreshToken = ""
-		cfg.TokenExpires = ""
-
-		if err := sync.SaveConfig(cfg); err != nil {
-			return fmt.Errorf("save config: %w", err)
-		}
-
-		color.Green("✓ Logged out successfully")
-		return nil
-	},
-}
-
-var syncPendingCmd = &cobra.Command{
-	Use:   "pending",
-	Short: "Show changes waiting to sync",
-	Long:  `List all changes in the outbox that haven't been pushed to the server yet.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := sync.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("load config: %w", err)
-		}
-
-		if !cfg.IsConfigured() {
-			fmt.Println("Sync not configured. Run 'position sync login' first.")
-			return nil
-		}
-
-		syncer, err := sync.NewSyncer(cfg, dbConn)
-		if err != nil {
-			return fmt.Errorf("create syncer: %w", err)
-		}
-		defer func() { _ = syncer.Close() }()
-
-		items, err := syncer.PendingChanges(context.Background())
-		if err != nil {
-			return fmt.Errorf("get pending: %w", err)
-		}
-
-		if len(items) == 0 {
-			color.Green("✓ No pending changes - everything is synced!")
-			return nil
-		}
-
-		fmt.Printf("Pending changes (%d):\n\n", len(items))
-		for _, item := range items {
-			fmt.Printf("  %s  %-10s  %s\n",
-				color.New(color.Faint).Sprint(item.ChangeID[:8]),
-				item.Entity,
-				item.TS.Format("2006-01-02 15:04:05"))
-		}
-		fmt.Printf("\nRun 'position sync now' to push these changes.\n")
+		color.Green("\n✓ Device unlinked")
+		fmt.Println("Local data is preserved. Sync is disabled.")
 
 		return nil
 	},
@@ -379,28 +126,18 @@ var syncPendingCmd = &cobra.Command{
 
 var syncWipeCmd = &cobra.Command{
 	Use:   "wipe",
-	Short: "Wipe all sync data and start fresh",
-	Long: `Clear all server-side sync data and local vault database.
+	Short: "Wipe all local data and start fresh",
+	Long: `Clear all local position data and reset the KV store.
 
 This is useful when:
-- Sync data becomes corrupted
-- You changed userID/AAD strategy mid-stream
-- You want to start fresh during development
+- You want to start fresh
+- Local data became corrupted
+- You're changing accounts
 
-After wipe, run 'position sync now' to re-push local data.`,
+This does NOT delete data from other linked devices.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := sync.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("load config: %w", err)
-		}
-
-		if !cfg.IsConfigured() {
-			return fmt.Errorf("sync not configured - run 'position sync login' first")
-		}
-
-		// Confirm with user
-		fmt.Println("This will DELETE all sync data on the server and locally.")
-		fmt.Println("Your local position data will NOT be affected.")
+		fmt.Println("This will DELETE all local position data.")
+		fmt.Println("Data on other linked devices will NOT be affected.")
 		fmt.Print("\nType 'wipe' to confirm: ")
 
 		reader := bufio.NewReader(os.Stdin)
@@ -412,112 +149,24 @@ After wipe, run 'position sync now' to re-push local data.`,
 			return nil
 		}
 
-		// Wipe server-side data
-		fmt.Println("\nWiping server data...")
-		client := vault.NewClient(vault.SyncConfig{
-			AppID:     sync.AppID,
-			BaseURL:   cfg.Server,
-			DeviceID:  cfg.DeviceID,
-			AuthToken: cfg.Token,
-		})
+		fmt.Println("\nWiping local data...")
 
-		ctx := context.Background()
-		deleted, err := client.Wipe(ctx)
-		if err != nil {
-			return fmt.Errorf("wipe server data: %w", err)
+		if err := charmClient.Reset(); err != nil {
+			return fmt.Errorf("failed to reset: %w", err)
 		}
-		color.Green("✓ Server data wiped (%d records deleted)", deleted)
 
-		// Remove local vault.db
-		fmt.Println("Removing local vault database...")
-		if err := os.Remove(cfg.VaultDB); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove vault.db: %w", err)
-		}
-		color.Green("✓ Local vault.db removed")
+		color.Green("✓ Local data wiped")
+		fmt.Println("Run 'position add' to start tracking again.")
 
-		fmt.Println("\nSync data cleared. Run 'position sync now' to re-push local data.")
 		return nil
 	},
 }
 
 func init() {
-	syncLoginCmd.Flags().String("server", "", "sync server URL (default: https://api.storeusa.org)")
-	syncNowCmd.Flags().BoolP("verbose", "v", false, "show detailed sync information")
-
-	syncCmd.AddCommand(syncInitCmd)
-	syncCmd.AddCommand(syncLoginCmd)
 	syncCmd.AddCommand(syncStatusCmd)
-	syncCmd.AddCommand(syncNowCmd)
-	syncCmd.AddCommand(syncLogoutCmd)
-	syncCmd.AddCommand(syncPendingCmd)
+	syncCmd.AddCommand(syncLinkCmd)
+	syncCmd.AddCommand(syncUnlinkCmd)
 	syncCmd.AddCommand(syncWipeCmd)
 
 	rootCmd.AddCommand(syncCmd)
-}
-
-// valueOrNone returns "(not set)" if the string is empty.
-func valueOrNone(s string) string {
-	if s == "" {
-		return "(not set)"
-	}
-	return s
-}
-
-// printTokenStatus displays token validity information.
-func printTokenStatus(cfg *sync.Config) {
-	if cfg.Token == "" {
-		fmt.Println("\nStatus:    " + color.YellowString("Not logged in"))
-		return
-	}
-
-	fmt.Println()
-	if cfg.TokenExpires == "" {
-		fmt.Println("Token:     valid (no expiry info)")
-		return
-	}
-
-	expires, err := time.Parse(time.RFC3339, cfg.TokenExpires)
-	if err != nil {
-		fmt.Printf("Token:     valid (invalid expiry: %v)\n", err)
-		return
-	}
-
-	now := time.Now()
-	if expires.Before(now) {
-		fmt.Print("Token:     ")
-		color.Red("EXPIRED (%s ago)", now.Sub(expires).Round(time.Second))
-		fmt.Println()
-		if cfg.RefreshToken != "" {
-			fmt.Println("           (has refresh token - run 'position sync now' to refresh)")
-		}
-	} else {
-		fmt.Print("Token:     ")
-		color.Green("valid")
-		fmt.Printf(" (expires in %s)\n", formatDuration(expires.Sub(now)))
-	}
-}
-
-// formatDuration formats a duration in a human-readable way.
-func formatDuration(d time.Duration) string {
-	d = d.Round(time.Second)
-	h := d / time.Hour
-	d -= h * time.Hour
-	m := d / time.Minute
-	d -= m * time.Minute
-	s := d / time.Second
-
-	if h > 0 {
-		return fmt.Sprintf("%dh %dm", h, m)
-	}
-	if m > 0 {
-		return fmt.Sprintf("%dm %ds", m, s)
-	}
-	return fmt.Sprintf("%ds", s)
-}
-
-// randHex returns n random bytes hex-encoded (2n chars).
-func randHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }

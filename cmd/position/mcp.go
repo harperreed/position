@@ -17,7 +17,7 @@ var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Start MCP server for AI agents",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		server, err := mcp.NewServer(dbConn)
+		server, err := mcp.NewServer(charmClient)
 		if err != nil {
 			return err
 		}

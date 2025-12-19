@@ -1,20 +1,16 @@
 // ABOUTME: Root Cobra command and global flags
-// ABOUTME: Sets up CLI structure and database connection
+// ABOUTME: Sets up CLI structure and Charm client connection
 
 package main
 
 import (
-	"database/sql"
 	"fmt"
 
-	"github.com/harper/position/internal/db"
+	"github.com/harper/position/internal/charm"
 	"github.com/spf13/cobra"
 )
 
-var (
-	dbPath string
-	dbConn *sql.DB
-)
+var charmClient *charm.Client
 
 var rootCmd = &cobra.Command{
 	Use:   "position",
@@ -36,21 +32,16 @@ Examples:
   position list`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		var err error
-		dbConn, err = db.InitDB(dbPath)
+		charmClient, err = charm.NewClient(nil)
 		if err != nil {
-			return fmt.Errorf("failed to initialize database: %w", err)
+			return fmt.Errorf("failed to initialize charm: %w", err)
 		}
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-		if dbConn != nil {
-			return dbConn.Close()
+		if charmClient != nil {
+			return charmClient.Close()
 		}
 		return nil
 	},
-}
-
-func init() {
-	defaultPath := db.GetDefaultDBPath()
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", defaultPath, "database file path")
 }

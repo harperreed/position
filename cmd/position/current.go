@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/harper/position/internal/db"
 	"github.com/harper/position/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -20,12 +19,12 @@ var currentCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		item, err := db.GetItemByName(dbConn, name)
+		item, err := charmClient.GetItemByName(name)
 		if err != nil {
 			return fmt.Errorf("item '%s' not found", name)
 		}
 
-		pos, err := db.GetCurrentPosition(dbConn, item.ID)
+		pos, err := charmClient.GetCurrentPosition(item.ID)
 		if err != nil {
 			return fmt.Errorf("no position found for '%s'", name)
 		}

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/harper/position/internal/db"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -22,7 +21,7 @@ func (s *Server) registerResources() {
 }
 
 func (s *Server) handleItemsResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	items, err := db.ListItems(s.db)
+	items, err := s.client.ListItems()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list items: %w", err)
 	}
@@ -31,7 +30,7 @@ func (s *Server) handleItemsResource(ctx context.Context, req *mcp.ReadResourceR
 	for i, item := range items {
 		itemOutputs[i] = ItemOutput{Name: item.Name}
 
-		pos, err := db.GetCurrentPosition(s.db, item.ID)
+		pos, err := s.client.GetCurrentPosition(item.ID)
 		if err == nil {
 			itemOutputs[i].CurrentPosition = &PositionOutput{
 				ItemName:   item.Name,
