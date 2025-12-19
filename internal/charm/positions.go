@@ -17,6 +17,10 @@ import (
 
 // CreatePosition creates a new position in the KV store.
 func (c *Client) CreatePosition(pos *models.Position) error {
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
+
 	key := fmt.Sprintf("%s%s", PositionPrefix, pos.ID.String())
 	data, err := json.Marshal(pos)
 	if err != nil {
@@ -218,6 +222,10 @@ func (c *Client) GetAllPositionsInRange(from, to time.Time) ([]*models.Position,
 
 // DeletePosition removes a single position.
 func (c *Client) DeletePosition(id uuid.UUID) error {
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
+
 	key := fmt.Sprintf("%s%s", PositionPrefix, id.String())
 	if err := c.kv.Delete([]byte(key)); err != nil {
 		return fmt.Errorf("delete position: %w", err)

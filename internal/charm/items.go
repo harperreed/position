@@ -19,6 +19,10 @@ var ErrNotFound = errors.New("not found")
 
 // CreateItem creates a new item in the KV store.
 func (c *Client) CreateItem(item *models.Item) error {
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
+
 	key := fmt.Sprintf("%s%s", ItemPrefix, item.ID.String())
 	data, err := json.Marshal(item)
 	if err != nil {
@@ -110,6 +114,10 @@ func (c *Client) ListItems() ([]*models.Item, error) {
 
 // DeleteItem removes an item and all its positions (cascade delete).
 func (c *Client) DeleteItem(id uuid.UUID) error {
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
+
 	// First, delete all positions for this item
 	if err := c.deletePositionsForItem(id); err != nil {
 		return fmt.Errorf("delete positions: %w", err)

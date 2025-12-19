@@ -2,8 +2,8 @@ module github.com/harper/position
 
 go 1.24.11
 
-// Use 2389-research fork for self-hosted charm server support
-replace github.com/charmbracelet/charm => github.com/2389-research/charm v0.0.0-20251219145900-e7eed68720a2
+// Use 2389-research fork for self-hosted charm server support and read-only fallback
+replace github.com/charmbracelet/charm => github.com/2389-research/charm v0.0.0-20251219202940-c2de8571a99a
 
 require (
 	github.com/charmbracelet/charm v0.0.0-00010101000000-000000000000

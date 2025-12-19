@@ -4,6 +4,7 @@
 package charm
 
 import (
+	"fmt"
 	"os"
 	"sync"
 
@@ -68,7 +69,7 @@ func InitClient(cfg *Config) error {
 			return
 		}
 
-		db, err := kv.OpenWithDefaults(DBName)
+		db, err := kv.OpenWithDefaultsFallback(DBName)
 		if err != nil {
 			clientErr = err
 			return
@@ -79,8 +80,8 @@ func InitClient(cfg *Config) error {
 			autoSync: cfg.AutoSync,
 		}
 
-		// Pull remote data on startup
-		if cfg.AutoSync {
+		// Pull remote data on startup (skip in read-only mode)
+		if cfg.AutoSync && !db.IsReadOnly() {
 			_ = db.Sync()
 		}
 	})
@@ -105,7 +106,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, err
 	}
 
-	db, err := kv.OpenWithDefaults(DBName)
+	db, err := kv.OpenWithDefaultsFallback(DBName)
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +116,8 @@ func NewClient(cfg *Config) (*Client, error) {
 		autoSync: cfg.AutoSync,
 	}
 
-	// Pull remote data on startup
-	if cfg.AutoSync {
+	// Pull remote data on startup (skip in read-only mode)
+	if cfg.AutoSync && !db.IsReadOnly() {
 		_ = db.Sync()
 	}
 
@@ -131,19 +132,31 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// syncIfEnabled syncs to remote if auto-sync is enabled.
+// syncIfEnabled syncs to remote if auto-sync is enabled and not in read-only mode.
 func (c *Client) syncIfEnabled() {
-	if c.autoSync {
+	if c.autoSync && !c.kv.IsReadOnly() {
 		_ = c.kv.Sync()
 	}
 }
 
+// IsReadOnly returns true if the database is in read-only mode.
+// This happens when another process (like an MCP server) holds the lock.
+func (c *Client) IsReadOnly() bool {
+	return c.kv.IsReadOnly()
+}
+
 // Sync forces a sync with the remote server.
 func (c *Client) Sync() error {
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot sync: database is locked by another process (MCP server?)")
+	}
 	return c.kv.Sync()
 }
 
 // Reset clears all local data and resets the KV store.
 func (c *Client) Reset() error {
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot reset: database is locked by another process (MCP server?)")
+	}
 	return c.kv.Reset()
 }
