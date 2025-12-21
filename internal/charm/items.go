@@ -4,12 +4,13 @@
 package charm
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/charmbracelet/charm/kv"
 	"github.com/google/uuid"
 	"github.com/harper/position/internal/models"
 )
@@ -42,7 +43,7 @@ func (c *Client) GetItemByID(id uuid.UUID) (*models.Item, error) {
 	key := fmt.Sprintf("%s%s", ItemPrefix, id.String())
 	data, err := c.kv.Get([]byte(key))
 	if err != nil {
-		if errors.Is(err, badger.ErrKeyNotFound) {
+		if errors.Is(err, kv.ErrMissingKey) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("get item: %w", err)
@@ -78,30 +79,26 @@ func (c *Client) ListItems() ([]*models.Item, error) {
 	items := []*models.Item{}
 	prefix := []byte(ItemPrefix)
 
-	err := c.kv.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.Prefix = prefix
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			err := item.Value(func(val []byte) error {
-				var i models.Item
-				if err := json.Unmarshal(val, &i); err != nil {
-					return err
-				}
-				items = append(items, &i)
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	keys, err := c.kv.Keys()
 	if err != nil {
-		return nil, fmt.Errorf("list items: %w", err)
+		return nil, fmt.Errorf("list keys: %w", err)
+	}
+
+	for _, key := range keys {
+		if !bytes.HasPrefix(key, prefix) {
+			continue
+		}
+
+		data, err := c.kv.Get(key)
+		if err != nil {
+			return nil, fmt.Errorf("get item %s: %w", key, err)
+		}
+
+		var item models.Item
+		if err := json.Unmarshal(data, &item); err != nil {
+			return nil, fmt.Errorf("unmarshal item: %w", err)
+		}
+		items = append(items, &item)
 	}
 
 	// Sort by name

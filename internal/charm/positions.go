@@ -4,13 +4,14 @@
 package charm
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/charmbracelet/charm/kv"
 	"github.com/google/uuid"
 	"github.com/harper/position/internal/models"
 )
@@ -40,7 +41,7 @@ func (c *Client) GetPosition(id uuid.UUID) (*models.Position, error) {
 	key := fmt.Sprintf("%s%s", PositionPrefix, id.String())
 	data, err := c.kv.Get([]byte(key))
 	if err != nil {
-		if errors.Is(err, badger.ErrKeyNotFound) {
+		if errors.Is(err, kv.ErrMissingKey) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("get position: %w", err)
@@ -74,33 +75,30 @@ func (c *Client) GetTimeline(itemID uuid.UUID) ([]*models.Position, error) {
 	positions := []*models.Position{}
 	prefix := []byte(PositionPrefix)
 
-	err := c.kv.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.Prefix = prefix
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			err := item.Value(func(val []byte) error {
-				var pos models.Position
-				if err := json.Unmarshal(val, &pos); err != nil {
-					return err
-				}
-				// Filter by item ID
-				if pos.ItemID == itemID {
-					positions = append(positions, &pos)
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	keys, err := c.kv.Keys()
 	if err != nil {
-		return nil, fmt.Errorf("get timeline: %w", err)
+		return nil, fmt.Errorf("list keys: %w", err)
+	}
+
+	for _, key := range keys {
+		if !bytes.HasPrefix(key, prefix) {
+			continue
+		}
+
+		data, err := c.kv.Get(key)
+		if err != nil {
+			return nil, fmt.Errorf("get position %s: %w", key, err)
+		}
+
+		var pos models.Position
+		if err := json.Unmarshal(data, &pos); err != nil {
+			return nil, fmt.Errorf("unmarshal position: %w", err)
+		}
+
+		// Filter by item ID
+		if pos.ItemID == itemID {
+			positions = append(positions, &pos)
+		}
 	}
 
 	// Sort by recorded_at descending (newest first)
@@ -151,30 +149,26 @@ func (c *Client) GetAllPositions() ([]*models.Position, error) {
 	positions := []*models.Position{}
 	prefix := []byte(PositionPrefix)
 
-	err := c.kv.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.Prefix = prefix
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			err := item.Value(func(val []byte) error {
-				var pos models.Position
-				if err := json.Unmarshal(val, &pos); err != nil {
-					return err
-				}
-				positions = append(positions, &pos)
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	keys, err := c.kv.Keys()
 	if err != nil {
-		return nil, fmt.Errorf("get all positions: %w", err)
+		return nil, fmt.Errorf("list keys: %w", err)
+	}
+
+	for _, key := range keys {
+		if !bytes.HasPrefix(key, prefix) {
+			continue
+		}
+
+		data, err := c.kv.Get(key)
+		if err != nil {
+			return nil, fmt.Errorf("get position %s: %w", key, err)
+		}
+
+		var pos models.Position
+		if err := json.Unmarshal(data, &pos); err != nil {
+			return nil, fmt.Errorf("unmarshal position: %w", err)
+		}
+		positions = append(positions, &pos)
 	}
 
 	// Sort by recorded_at descending
