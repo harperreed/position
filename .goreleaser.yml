@@ -79,7 +79,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: https://github.com/harperreed/position
-    description: "A super simple git-aware todo manager"
+    description: "Simple location tracking CLI with MCP integration and Charm cloud sync"
     license: MIT
     commit_author:
       name: goreleaserbot

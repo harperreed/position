@@ -69,7 +69,7 @@ Examples:
 			return fmt.Errorf("failed to create position: %w", err)
 		}
 
-		color.Green("✓ Added position for %s", name)
+		color.Green("✓ Position set for %s", name)
 		if label != nil {
 			fmt.Printf("  %s @ %s (%.4f, %.4f)\n",
 				color.New(color.Faint).Sprint(pos.ID.String()[:6]),

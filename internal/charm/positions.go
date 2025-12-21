@@ -17,9 +17,18 @@ import (
 )
 
 // CreatePosition creates a new position in the KV store.
+// Deduplicates: if the new position matches the current position for the item,
+// it's silently swallowed (returns nil without storing).
 func (c *Client) CreatePosition(pos *models.Position) error {
 	if c.kv.IsReadOnly() {
 		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
+
+	// Check if this is a duplicate of the current position
+	current, err := c.GetCurrentPosition(pos.ItemID)
+	if err == nil && current.Latitude == pos.Latitude && current.Longitude == pos.Longitude {
+		// Same location as current position - swallow it
+		return nil
 	}
 
 	key := fmt.Sprintf("%s%s", PositionPrefix, pos.ID.String())

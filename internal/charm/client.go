@@ -160,3 +160,16 @@ func (c *Client) Reset() error {
 	}
 	return c.kv.Reset()
 }
+
+// NewTestClient creates a client for testing without network access.
+// Uses kv.OpenWithDefaults to avoid Charm Cloud authentication.
+func NewTestClient(dbName string) (*Client, error) {
+	db, err := kv.OpenWithDefaults(dbName)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{
+		kv:       db,
+		autoSync: false,
+	}, nil
+}
