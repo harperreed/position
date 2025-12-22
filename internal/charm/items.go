@@ -13,7 +13,11 @@ import (
 	"github.com/charmbracelet/charm/kv"
 	"github.com/google/uuid"
 	"github.com/harper/position/internal/models"
+	"github.com/harper/position/internal/storage"
 )
+
+// Compile-time check that Client implements storage.Repository.
+var _ storage.Repository = (*Client)(nil)
 
 // ErrNotFound is returned when an item or position is not found.
 var ErrNotFound = errors.New("not found")

@@ -13,6 +13,9 @@ import (
 
 // FormatPosition formats a position for terminal display.
 func FormatPosition(pos *models.Position) string {
+	if pos == nil {
+		return color.New(color.Faint).Sprint("(no position)")
+	}
 	coords := fmt.Sprintf("(%.4f, %.4f)", pos.Latitude, pos.Longitude)
 	relTime := FormatRelativeTime(pos.RecordedAt)
 
@@ -29,6 +32,9 @@ func FormatPosition(pos *models.Position) string {
 
 // FormatPositionForTimeline formats a position for timeline display.
 func FormatPositionForTimeline(pos *models.Position) string {
+	if pos == nil {
+		return color.New(color.Faint).Sprint("  (no position)")
+	}
 	coords := fmt.Sprintf("(%.4f, %.4f)", pos.Latitude, pos.Longitude)
 	timeStr := pos.RecordedAt.Format("Jan 2, 3:04 PM")
 
@@ -45,6 +51,9 @@ func FormatPositionForTimeline(pos *models.Position) string {
 
 // FormatItemWithPosition formats an item with its current position.
 func FormatItemWithPosition(item *models.Item, pos *models.Position) string {
+	if item == nil {
+		return color.New(color.Faint).Sprint("(invalid item)")
+	}
 	if pos == nil {
 		return fmt.Sprintf("%s - %s",
 			color.GreenString(item.Name),
@@ -68,6 +77,11 @@ func FormatItemWithPosition(item *models.Item, pos *models.Position) string {
 // FormatRelativeTime formats a time as relative to now.
 func FormatRelativeTime(t time.Time) string {
 	diff := time.Since(t)
+
+	// Handle future times (clock skew, bad data)
+	if diff < 0 {
+		return color.YellowString("in the future")
+	}
 
 	if diff < time.Minute {
 		return "just now"

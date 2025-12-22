@@ -4,8 +4,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
+	"github.com/harper/position/internal/charm"
 	"github.com/harper/position/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +29,15 @@ var listCmd = &cobra.Command{
 		}
 
 		for _, item := range items {
-			pos, _ := charmClient.GetCurrentPosition(item.ID)
+			pos, err := charmClient.GetCurrentPosition(item.ID)
+			if err != nil {
+				// ErrNotFound is expected for items without positions
+				if !errors.Is(err, charm.ErrNotFound) {
+					// Unexpected error - log but continue with other items
+					fmt.Fprintf(os.Stderr, "warning: failed to get position for %s: %v\n", item.Name, err)
+				}
+				// pos will be nil, which FormatItemWithPosition handles
+			}
 			fmt.Println(ui.FormatItemWithPosition(item, pos))
 		}
 

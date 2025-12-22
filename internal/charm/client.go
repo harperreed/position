@@ -26,6 +26,7 @@ const (
 var (
 	globalClient *Client
 	clientOnce   sync.Once
+	clientMu     sync.RWMutex
 	clientErr    error
 )
 
@@ -65,13 +66,17 @@ func InitClient(cfg *Config) error {
 
 		// Set CHARM_HOST before opening KV
 		if err := os.Setenv("CHARM_HOST", cfg.CharmHost); err != nil {
+			clientMu.Lock()
 			clientErr = err
+			clientMu.Unlock()
 			return
 		}
 
 		db, err := kv.OpenWithDefaultsFallback(DBName)
 		if err != nil {
+			clientMu.Lock()
 			clientErr = err
+			clientMu.Unlock()
 			return
 		}
 
@@ -82,9 +87,14 @@ func InitClient(cfg *Config) error {
 
 		// Pull remote data on startup (skip in read-only mode)
 		if cfg.AutoSync && !db.IsReadOnly() {
-			_ = db.Sync()
+			if err := db.Sync(); err != nil {
+				// Log for visibility - sync failures shouldn't crash but should be visible
+				fmt.Fprintf(os.Stderr, "warning: sync failed: %v\n", err)
+			}
 		}
 	})
+	clientMu.RLock()
+	defer clientMu.RUnlock()
 	return clientErr
 }
 
@@ -118,24 +128,32 @@ func NewClient(cfg *Config) (*Client, error) {
 
 	// Pull remote data on startup (skip in read-only mode)
 	if cfg.AutoSync && !db.IsReadOnly() {
-		_ = db.Sync()
+		if err := db.Sync(); err != nil {
+			// Log for visibility - sync failures shouldn't crash but should be visible
+			fmt.Fprintf(os.Stderr, "warning: sync failed: %v\n", err)
+		}
 	}
 
 	return client, nil
 }
 
-// Close releases client resources.
+// Close releases client resources. Safe to call multiple times.
 func (c *Client) Close() error {
-	if c.kv != nil {
-		return c.kv.Close()
+	if c == nil || c.kv == nil {
+		return nil
 	}
-	return nil
+	err := c.kv.Close()
+	c.kv = nil
+	return err
 }
 
 // syncIfEnabled syncs to remote if auto-sync is enabled and not in read-only mode.
 func (c *Client) syncIfEnabled() {
 	if c.autoSync && !c.kv.IsReadOnly() {
-		_ = c.kv.Sync()
+		if err := c.kv.Sync(); err != nil {
+			// Log for visibility - sync failures shouldn't crash but should be visible
+			fmt.Fprintf(os.Stderr, "warning: sync failed: %v\n", err)
+		}
 	}
 }
 

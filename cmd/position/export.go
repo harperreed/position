@@ -15,6 +15,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// durationRegex matches relative duration strings like "24h", "7d", "1w", "1m".
+var durationRegex = regexp.MustCompile(`^(\d+)([hdwm])$`)
+
 var exportCmd = &cobra.Command{
 	Use:     "export [name]",
 	Aliases: []string{"e"},
@@ -136,7 +139,7 @@ Examples:
 		// Output
 		output, _ := cmd.Flags().GetString("output")
 		if output != "" {
-			if err := os.WriteFile(output, jsonBytes, 0600); err != nil {
+			if err := os.WriteFile(output, jsonBytes, 0644); err != nil { //nolint:gosec // 0644 is intentional for data export files
 				return fmt.Errorf("failed to write file: %w", err)
 			}
 			fmt.Fprintf(os.Stderr, "Wrote %d positions to %s\n", len(positions), output)
@@ -185,13 +188,15 @@ func getAllPositions(since, from, to time.Time) ([]*models.Position, error) {
 
 // parseDuration parses relative duration strings like "24h", "7d", "1w".
 func parseDuration(s string) (time.Time, error) {
-	re := regexp.MustCompile(`^(\d+)([hdwm])$`)
-	matches := re.FindStringSubmatch(s)
+	matches := durationRegex.FindStringSubmatch(s)
 	if matches == nil {
 		return time.Time{}, fmt.Errorf("invalid duration format (use e.g., 24h, 7d, 1w)")
 	}
 
-	num, _ := strconv.Atoi(matches[1])
+	num, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid number in duration '%s': %w", s, err)
+	}
 	unit := matches[2]
 
 	var duration time.Duration

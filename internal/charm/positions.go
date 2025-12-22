@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -15,6 +16,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/harper/position/internal/models"
 )
+
+// coordEpsilon defines the threshold for considering coordinates equal.
+// 0.0000001 degrees ≈ 1.1cm at the equator, sufficient for GPS deduplication.
+const coordEpsilon = 0.0000001
+
+// coordsEqual compares two coordinate pairs using epsilon for floating-point safety.
+func coordsEqual(lat1, lng1, lat2, lng2 float64) bool {
+	return math.Abs(lat1-lat2) < coordEpsilon && math.Abs(lng1-lng2) < coordEpsilon
+}
 
 // CreatePosition creates a new position in the KV store.
 // Deduplicates: if the new position matches the current position for the item,
@@ -26,7 +36,7 @@ func (c *Client) CreatePosition(pos *models.Position) error {
 
 	// Check if this is a duplicate of the current position
 	current, err := c.GetCurrentPosition(pos.ItemID)
-	if err == nil && current.Latitude == pos.Latitude && current.Longitude == pos.Longitude {
+	if err == nil && coordsEqual(current.Latitude, current.Longitude, pos.Latitude, pos.Longitude) {
 		// Same location as current position - swallow it
 		return nil
 	}

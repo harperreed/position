@@ -55,10 +55,14 @@ func (s *Server) registerAddPositionTool() {
 				"latitude": map[string]interface{}{
 					"type":        "number",
 					"description": "Latitude coordinate (-90 to 90)",
+					"minimum":     -90,
+					"maximum":     90,
 				},
 				"longitude": map[string]interface{}{
 					"type":        "number",
 					"description": "Longitude coordinate (-180 to 180)",
+					"minimum":     -180,
+					"maximum":     180,
 				},
 				"label": map[string]interface{}{
 					"type":        "string",
@@ -75,6 +79,11 @@ func (s *Server) registerAddPositionTool() {
 }
 
 func (s *Server) handleAddPosition(_ context.Context, req *mcp.CallToolRequest, input AddPositionInput) (*mcp.CallToolResult, PositionOutput, error) {
+	// Validate name first
+	if err := models.ValidateName(input.Name); err != nil {
+		return nil, PositionOutput{}, err
+	}
+
 	if err := models.ValidateCoordinates(input.Latitude, input.Longitude); err != nil {
 		return nil, PositionOutput{}, err
 	}
@@ -143,6 +152,10 @@ func (s *Server) registerGetCurrentTool() {
 }
 
 func (s *Server) handleGetCurrent(_ context.Context, req *mcp.CallToolRequest, input GetCurrentInput) (*mcp.CallToolResult, PositionOutput, error) {
+	if err := models.ValidateName(input.Name); err != nil {
+		return nil, PositionOutput{}, err
+	}
+
 	item, err := s.client.GetItemByName(input.Name)
 	if err != nil {
 		return nil, PositionOutput{}, fmt.Errorf("item '%s' not found", input.Name)
@@ -192,6 +205,10 @@ func (s *Server) registerGetTimelineTool() {
 }
 
 func (s *Server) handleGetTimeline(_ context.Context, req *mcp.CallToolRequest, input GetCurrentInput) (*mcp.CallToolResult, TimelineOutput, error) {
+	if err := models.ValidateName(input.Name); err != nil {
+		return nil, TimelineOutput{}, err
+	}
+
 	item, err := s.client.GetItemByName(input.Name)
 	if err != nil {
 		return nil, TimelineOutput{}, fmt.Errorf("item '%s' not found", input.Name)
@@ -312,6 +329,10 @@ func (s *Server) registerRemoveItemTool() {
 }
 
 func (s *Server) handleRemoveItem(_ context.Context, req *mcp.CallToolRequest, input RemoveItemInput) (*mcp.CallToolResult, RemoveItemOutput, error) {
+	if err := models.ValidateName(input.Name); err != nil {
+		return nil, RemoveItemOutput{}, err
+	}
+
 	item, err := s.client.GetItemByName(input.Name)
 	if err != nil {
 		return nil, RemoveItemOutput{}, fmt.Errorf("item '%s' not found", input.Name)

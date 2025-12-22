@@ -5,6 +5,8 @@ package models
 
 import (
 	"fmt"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +14,12 @@ import (
 
 // ValidateCoordinates checks if latitude and longitude are within valid ranges.
 func ValidateCoordinates(lat, lng float64) error {
+	if math.IsNaN(lat) || math.IsNaN(lng) {
+		return fmt.Errorf("coordinates cannot be NaN")
+	}
+	if math.IsInf(lat, 0) || math.IsInf(lng, 0) {
+		return fmt.Errorf("coordinates cannot be infinite")
+	}
 	if lat < -90 || lat > 90 {
 		return fmt.Errorf("latitude must be between -90 and 90")
 	}
@@ -21,22 +29,35 @@ func ValidateCoordinates(lat, lng float64) error {
 	return nil
 }
 
+// ValidateName checks if a name is valid (non-empty, within length limits).
+// Note: This validates the raw input - callers should trim whitespace themselves if needed.
+func ValidateName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return fmt.Errorf("name cannot be empty or whitespace")
+	}
+	if len(name) > 255 {
+		return fmt.Errorf("name too long (max 255 characters)")
+	}
+	return nil
+}
+
 // Item represents something being tracked (person, car, etc.).
 type Item struct {
-	ID        uuid.UUID
-	Name      string
-	CreatedAt time.Time
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Position represents a location entry for an item.
 type Position struct {
-	ID         uuid.UUID
-	ItemID     uuid.UUID
-	Latitude   float64
-	Longitude  float64
-	Label      *string
-	RecordedAt time.Time
-	CreatedAt  time.Time
+	ID         uuid.UUID `json:"id"`
+	ItemID     uuid.UUID `json:"item_id"`
+	Latitude   float64   `json:"latitude"`
+	Longitude  float64   `json:"longitude"`
+	Label      *string   `json:"label,omitempty"`
+	RecordedAt time.Time `json:"recorded_at"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // NewItem creates a new item with generated UUID and timestamp.
