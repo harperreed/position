@@ -40,7 +40,6 @@ type Repository interface {
 	Close() error
 	Sync() error
 	Reset() error
-	IsReadOnly() bool
 }
 
 // Compile-time interface implementation check is in the charm package:

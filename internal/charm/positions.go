@@ -30,10 +30,6 @@ func coordsEqual(lat1, lng1, lat2, lng2 float64) bool {
 // Deduplicates: if the new position matches the current position for the item,
 // it's silently swallowed (returns nil without storing).
 func (c *Client) CreatePosition(pos *models.Position) error {
-	if c.kv.IsReadOnly() {
-		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
-	}
-
 	// Check if this is a duplicate of the current position
 	current, err := c.GetCurrentPosition(pos.ItemID)
 	if err == nil && coordsEqual(current.Latitude, current.Longitude, pos.Latitude, pos.Longitude) {
@@ -47,18 +43,13 @@ func (c *Client) CreatePosition(pos *models.Position) error {
 		return fmt.Errorf("marshal position: %w", err)
 	}
 
-	if err := c.kv.Set([]byte(key), data); err != nil {
-		return fmt.Errorf("set position: %w", err)
-	}
-
-	c.syncIfEnabled()
-	return nil
+	return c.Set([]byte(key), data)
 }
 
 // GetPosition retrieves a position by its UUID.
 func (c *Client) GetPosition(id uuid.UUID) (*models.Position, error) {
 	key := fmt.Sprintf("%s%s", PositionPrefix, id.String())
-	data, err := c.kv.Get([]byte(key))
+	data, err := c.Get([]byte(key))
 	if err != nil {
 		if errors.Is(err, kv.ErrMissingKey) {
 			return nil, ErrNotFound
@@ -94,30 +85,37 @@ func (c *Client) GetTimeline(itemID uuid.UUID) ([]*models.Position, error) {
 	positions := []*models.Position{}
 	prefix := []byte(PositionPrefix)
 
-	keys, err := c.kv.Keys()
-	if err != nil {
-		return nil, fmt.Errorf("list keys: %w", err)
-	}
-
-	for _, key := range keys {
-		if !bytes.HasPrefix(key, prefix) {
-			continue
-		}
-
-		data, err := c.kv.Get(key)
+	err := c.DoReadOnly(func(k *kv.KV) error {
+		keys, err := k.Keys()
 		if err != nil {
-			return nil, fmt.Errorf("get position %s: %w", key, err)
+			return fmt.Errorf("list keys: %w", err)
 		}
 
-		var pos models.Position
-		if err := json.Unmarshal(data, &pos); err != nil {
-			return nil, fmt.Errorf("unmarshal position: %w", err)
-		}
+		for _, key := range keys {
+			if !bytes.HasPrefix(key, prefix) {
+				continue
+			}
 
-		// Filter by item ID
-		if pos.ItemID == itemID {
-			positions = append(positions, &pos)
+			data, err := k.Get(key)
+			if err != nil {
+				return fmt.Errorf("get position %s: %w", key, err)
+			}
+
+			var pos models.Position
+			if err := json.Unmarshal(data, &pos); err != nil {
+				return fmt.Errorf("unmarshal position: %w", err)
+			}
+
+			// Filter by item ID
+			if pos.ItemID == itemID {
+				positions = append(positions, &pos)
+			}
 		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	// Sort by recorded_at descending (newest first)
@@ -168,26 +166,33 @@ func (c *Client) GetAllPositions() ([]*models.Position, error) {
 	positions := []*models.Position{}
 	prefix := []byte(PositionPrefix)
 
-	keys, err := c.kv.Keys()
-	if err != nil {
-		return nil, fmt.Errorf("list keys: %w", err)
-	}
-
-	for _, key := range keys {
-		if !bytes.HasPrefix(key, prefix) {
-			continue
-		}
-
-		data, err := c.kv.Get(key)
+	err := c.DoReadOnly(func(k *kv.KV) error {
+		keys, err := k.Keys()
 		if err != nil {
-			return nil, fmt.Errorf("get position %s: %w", key, err)
+			return fmt.Errorf("list keys: %w", err)
 		}
 
-		var pos models.Position
-		if err := json.Unmarshal(data, &pos); err != nil {
-			return nil, fmt.Errorf("unmarshal position: %w", err)
+		for _, key := range keys {
+			if !bytes.HasPrefix(key, prefix) {
+				continue
+			}
+
+			data, err := k.Get(key)
+			if err != nil {
+				return fmt.Errorf("get position %s: %w", key, err)
+			}
+
+			var pos models.Position
+			if err := json.Unmarshal(data, &pos); err != nil {
+				return fmt.Errorf("unmarshal position: %w", err)
+			}
+			positions = append(positions, &pos)
 		}
-		positions = append(positions, &pos)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	// Sort by recorded_at descending
@@ -235,15 +240,6 @@ func (c *Client) GetAllPositionsInRange(from, to time.Time) ([]*models.Position,
 
 // DeletePosition removes a single position.
 func (c *Client) DeletePosition(id uuid.UUID) error {
-	if c.kv.IsReadOnly() {
-		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
-	}
-
 	key := fmt.Sprintf("%s%s", PositionPrefix, id.String())
-	if err := c.kv.Delete([]byte(key)); err != nil {
-		return fmt.Errorf("delete position: %w", err)
-	}
-
-	c.syncIfEnabled()
-	return nil
+	return c.Delete([]byte(key))
 }
