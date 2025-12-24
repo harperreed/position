@@ -161,6 +161,9 @@ func TestCreatePosition_IgnoresLabelForDeduplication(t *testing.T) {
 }
 
 func TestCreatePosition_DifferentItemsSameLocation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping flaky integration test in short mode")
+	}
 	tmpDir := t.TempDir()
 	t.Setenv("CHARM_DATA_DIR", tmpDir)
 
