@@ -4,7 +4,9 @@
 package charm
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/charmbracelet/charm/kv"
 )
@@ -19,14 +21,21 @@ const (
 	// Key prefixes for type-based organization.
 	ItemPrefix     = "item:"
 	PositionPrefix = "position:"
+
+	// MetaLastSync stores the timestamp of the last successful sync.
+	MetaLastSync = "_meta:last_sync"
+
+	// DefaultStaleThreshold is how long before we consider data stale and sync on read.
+	DefaultStaleThreshold = 1 * time.Hour
 )
 
 // Client holds configuration for KV operations.
 // Unlike the previous implementation, it does NOT hold a persistent connection.
 // Each operation opens the database, performs the operation, and closes it.
 type Client struct {
-	dbName   string
-	autoSync bool
+	dbName         string
+	autoSync       bool
+	staleThreshold time.Duration
 }
 
 // Config holds client configuration options.
@@ -35,6 +44,9 @@ type Config struct {
 	CharmHost string
 	// AutoSync enables automatic sync after writes.
 	AutoSync bool
+	// StaleThreshold is how long before data is considered stale and triggers sync on read.
+	// Set to 0 to disable auto-sync on read. Default: 1 hour.
+	StaleThreshold time.Duration
 }
 
 // DefaultConfig returns the default client configuration.
@@ -44,8 +56,9 @@ func DefaultConfig() *Config {
 		host = DefaultCharmHost
 	}
 	return &Config{
-		CharmHost: host,
-		AutoSync:  true,
+		CharmHost:      host,
+		AutoSync:       true,
+		StaleThreshold: DefaultStaleThreshold,
 	}
 }
 
@@ -61,13 +74,21 @@ func NewClient(cfg *Config) (*Client, error) {
 	}
 
 	return &Client{
-		dbName:   DBName,
-		autoSync: cfg.AutoSync,
+		dbName:         DBName,
+		autoSync:       cfg.AutoSync,
+		staleThreshold: cfg.StaleThreshold,
 	}, nil
 }
 
 // Get retrieves a value by key (read-only, no lock contention).
+// Syncs first if data is stale (last sync > threshold).
 func (c *Client) Get(key []byte) ([]byte, error) {
+	// Sync if stale before reading
+	if err := c.SyncIfStale(); err != nil {
+		// Log but don't fail - stale data is better than no data
+		fmt.Fprintf(os.Stderr, "warning: stale sync failed: %v\n", err)
+	}
+
 	var val []byte
 	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
 		var err error
@@ -104,7 +125,14 @@ func (c *Client) Delete(key []byte) error {
 }
 
 // Keys returns all keys in the database.
+// Syncs first if data is stale (last sync > threshold).
 func (c *Client) Keys() ([][]byte, error) {
+	// Sync if stale before reading
+	if err := c.SyncIfStale(); err != nil {
+		// Log but don't fail - stale data is better than no data
+		fmt.Fprintf(os.Stderr, "warning: stale sync failed: %v\n", err)
+	}
+
 	var keys [][]byte
 	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
 		var err error
@@ -137,8 +165,48 @@ func (c *Client) Do(fn func(k *kv.KV) error) error {
 // Sync triggers a manual sync with the charm server.
 func (c *Client) Sync() error {
 	return kv.Do(c.dbName, func(k *kv.KV) error {
-		return k.Sync()
+		if err := k.Sync(); err != nil {
+			return err
+		}
+		// Record successful sync time
+		return k.Set([]byte(MetaLastSync), []byte(time.Now().UTC().Format(time.RFC3339)))
 	})
+}
+
+// LastSyncTime returns when the database was last synced.
+func (c *Client) LastSyncTime() (time.Time, error) {
+	var lastSync time.Time
+	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		data, err := k.Get([]byte(MetaLastSync))
+		if err != nil {
+			return err
+		}
+		lastSync, err = time.Parse(time.RFC3339, string(data))
+		return err
+	})
+	return lastSync, err
+}
+
+// IsStale returns true if the last sync was longer ago than the stale threshold.
+func (c *Client) IsStale() bool {
+	if c.staleThreshold == 0 {
+		return false // Stale sync disabled
+	}
+	lastSync, err := c.LastSyncTime()
+	if err != nil {
+		return true // Never synced or error reading - consider stale
+	}
+	return time.Since(lastSync) > c.staleThreshold
+}
+
+// SyncIfStale syncs with the server if the data is stale.
+// Returns nil if no sync was needed or sync succeeded.
+func (c *Client) SyncIfStale() error {
+	if !c.IsStale() {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "Data stale (last sync > %v ago), syncing...\n", c.staleThreshold)
+	return c.Sync()
 }
 
 // Reset clears all data (nuclear option).
