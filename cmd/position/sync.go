@@ -24,6 +24,7 @@ var syncCmd = &cobra.Command{
 
 Commands:
   status  - Show sync status and user info
+  now     - Trigger immediate sync (pull + push)
   link    - Link this device to your Charm account
   unlink  - Unlink this device from your account
   repair  - Repair corrupted database (checkpoint WAL, check integrity, vacuum)
@@ -34,6 +35,7 @@ Data syncs automatically on every write operation.
 
 Examples:
   position sync status
+  position sync now
   position sync link
   position sync repair --force
   position sync reset
@@ -239,6 +241,30 @@ WARNING: Any local changes not yet synced to cloud will be lost.`,
 	},
 }
 
+var syncNowCmd = &cobra.Command{
+	Use:     "now",
+	Aliases: []string{"pull"},
+	Short:   "Sync with cloud now",
+	Long: `Trigger an immediate sync with Charm Cloud.
+
+This pulls any changes from the cloud and pushes local changes.
+Normally sync happens automatically on writes, but this lets you
+manually trigger a sync to pull updates from other devices.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Println("Syncing with Charm Cloud...")
+
+		err := kv.Do(charm.DBName, func(k *kv.KV) error {
+			return k.Sync()
+		})
+		if err != nil {
+			return fmt.Errorf("sync failed: %w", err)
+		}
+
+		color.Green("✓ Sync complete")
+		return nil
+	},
+}
+
 var syncWipeCmd = &cobra.Command{
 	Use:   "wipe",
 	Short: "Permanently delete all data (local and cloud)",
@@ -299,6 +325,7 @@ func init() {
 	syncRepairCmd.Flags().BoolVarP(&repairForce, "force", "f", false, "Force recovery even if integrity check fails")
 
 	syncCmd.AddCommand(syncStatusCmd)
+	syncCmd.AddCommand(syncNowCmd)
 	syncCmd.AddCommand(syncLinkCmd)
 	syncCmd.AddCommand(syncUnlinkCmd)
 	syncCmd.AddCommand(syncRepairCmd)
