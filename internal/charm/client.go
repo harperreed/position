@@ -21,12 +21,6 @@ const (
 	// Key prefixes for type-based organization.
 	ItemPrefix     = "item:"
 	PositionPrefix = "position:"
-
-	// MetaLastSync stores the timestamp of the last successful sync.
-	MetaLastSync = "_meta:last_sync"
-
-	// DefaultStaleThreshold is how long before we consider data stale and sync on read.
-	DefaultStaleThreshold = 1 * time.Hour
 )
 
 // Client holds configuration for KV operations.
@@ -58,7 +52,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		CharmHost:      host,
 		AutoSync:       true,
-		StaleThreshold: DefaultStaleThreshold,
+		StaleThreshold: kv.DefaultStaleThreshold,
 	}
 }
 
@@ -163,28 +157,21 @@ func (c *Client) Do(fn func(k *kv.KV) error) error {
 }
 
 // Sync triggers a manual sync with the charm server.
+// The charm library automatically records the sync timestamp.
 func (c *Client) Sync() error {
 	return kv.Do(c.dbName, func(k *kv.KV) error {
-		if err := k.Sync(); err != nil {
-			return err
-		}
-		// Record successful sync time
-		return k.Set([]byte(MetaLastSync), []byte(time.Now().UTC().Format(time.RFC3339)))
+		return k.Sync()
 	})
 }
 
 // LastSyncTime returns when the database was last synced.
-func (c *Client) LastSyncTime() (time.Time, error) {
+func (c *Client) LastSyncTime() time.Time {
 	var lastSync time.Time
-	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
-		data, err := k.Get([]byte(MetaLastSync))
-		if err != nil {
-			return err
-		}
-		lastSync, err = time.Parse(time.RFC3339, string(data))
-		return err
+	_ = kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		lastSync = k.LastSyncTime()
+		return nil
 	})
-	return lastSync, err
+	return lastSync
 }
 
 // IsStale returns true if the last sync was longer ago than the stale threshold.
@@ -192,11 +179,12 @@ func (c *Client) IsStale() bool {
 	if c.staleThreshold == 0 {
 		return false // Stale sync disabled
 	}
-	lastSync, err := c.LastSyncTime()
-	if err != nil {
-		return true // Never synced or error reading - consider stale
-	}
-	return time.Since(lastSync) > c.staleThreshold
+	var isStale bool
+	_ = kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		isStale = k.IsStale(c.staleThreshold)
+		return nil
+	})
+	return isStale
 }
 
 // SyncIfStale syncs with the server if the data is stale.
