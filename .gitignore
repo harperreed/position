@@ -13,3 +13,8 @@ go.work
 scripts/.env
 output.txt
 code-review.md
+
+# Coverage files
+coverage.html
+coverage.out
+*_cover.out
