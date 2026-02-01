@@ -19,12 +19,12 @@ var timelineCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		item, err := charmClient.GetItemByName(name)
+		item, err := db.GetItemByName(name)
 		if err != nil {
 			return fmt.Errorf("item '%s' not found", name)
 		}
 
-		positions, err := charmClient.GetTimeline(item.ID)
+		positions, err := db.GetTimeline(item.ID)
 		if err != nil {
 			return fmt.Errorf("failed to get timeline: %w", err)
 		}

@@ -21,7 +21,7 @@ var removeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		item, err := charmClient.GetItemByName(name)
+		item, err := db.GetItemByName(name)
 		if err != nil {
 			return fmt.Errorf("item '%s' not found", name)
 		}
@@ -38,12 +38,12 @@ var removeCmd = &cobra.Command{
 			}
 		}
 
-		// DeleteItem cascades to positions and syncs automatically
-		if err := charmClient.DeleteItem(item.ID); err != nil {
+		// DeleteItem cascades to positions automatically
+		if err := db.DeleteItem(item.ID); err != nil {
 			return fmt.Errorf("failed to remove item: %w", err)
 		}
 
-		color.Green("✓ Removed %s", name)
+		color.Green("Removed %s", name)
 		return nil
 	},
 }

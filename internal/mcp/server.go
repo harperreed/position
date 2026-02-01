@@ -7,20 +7,20 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/harper/position/internal/charm"
+	"github.com/harper/position/internal/storage"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Server wraps MCP server with Charm client.
+// Server wraps MCP server with SQLite repository.
 type Server struct {
-	mcp    *mcp.Server
-	client *charm.Client
+	mcp  *mcp.Server
+	repo storage.Repository
 }
 
 // NewServer creates MCP server with all capabilities.
-func NewServer(client *charm.Client) (*Server, error) {
-	if client == nil {
-		return nil, fmt.Errorf("charm client is required")
+func NewServer(repo storage.Repository) (*Server, error) {
+	if repo == nil {
+		return nil, fmt.Errorf("repository is required")
 	}
 
 	mcpServer := mcp.NewServer(
@@ -32,8 +32,8 @@ func NewServer(client *charm.Client) (*Server, error) {
 	)
 
 	s := &Server{
-		mcp:    mcpServer,
-		client: client,
+		mcp:  mcpServer,
+		repo: repo,
 	}
 
 	s.registerTools()

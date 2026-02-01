@@ -21,7 +21,7 @@ func (s *Server) registerResources() {
 }
 
 func (s *Server) handleItemsResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	items, err := s.client.ListItems()
+	items, err := s.repo.ListItems()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list items: %w", err)
 	}
@@ -30,7 +30,7 @@ func (s *Server) handleItemsResource(ctx context.Context, req *mcp.ReadResourceR
 	for i, item := range items {
 		itemOutputs[i] = ItemOutput{Name: item.Name}
 
-		pos, err := s.client.GetCurrentPosition(item.ID)
+		pos, err := s.repo.GetCurrentPosition(item.ID)
 		if err == nil {
 			itemOutputs[i].CurrentPosition = &PositionOutput{
 				ItemName:   item.Name,

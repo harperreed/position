@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/harper/position/internal/charm"
 	"github.com/harper/position/internal/models"
+	"github.com/harper/position/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -36,11 +36,11 @@ Examples:
 		}
 
 		// Get or create item
-		item, err := charmClient.GetItemByName(name)
+		item, err := db.GetItemByName(name)
 		if err != nil {
-			if errors.Is(err, charm.ErrNotFound) {
+			if errors.Is(err, storage.ErrNotFound) {
 				item = models.NewItem(name)
-				if err := charmClient.CreateItem(item); err != nil {
+				if err := db.CreateItem(item); err != nil {
 					return fmt.Errorf("failed to create item: %w", err)
 				}
 			} else {
@@ -65,11 +65,11 @@ Examples:
 			pos = models.NewPosition(item.ID, lat, lng, label)
 		}
 
-		if err := charmClient.CreatePosition(pos); err != nil {
+		if err := db.CreatePosition(pos); err != nil {
 			return fmt.Errorf("failed to create position: %w", err)
 		}
 
-		color.Green("✓ Position set for %s", name)
+		color.Green("Position set for %s", name)
 		if label != nil {
 			fmt.Printf("  %s @ %s (%.4f, %.4f)\n",
 				color.New(color.Faint).Sprint(pos.ID.String()[:6]),

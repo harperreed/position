@@ -1,4 +1,4 @@
-// ABOUTME: Export command for generating GeoJSON output
+// ABOUTME: Export command for generating GeoJSON, markdown, and YAML output
 // ABOUTME: Supports time filtering and multiple geometry types
 
 package main
@@ -10,8 +10,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/harper/position/internal/geojson"
 	"github.com/harper/position/internal/models"
+	"github.com/harper/position/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -21,12 +23,15 @@ var durationRegex = regexp.MustCompile(`^(\d+)([hdwm])$`)
 var exportCmd = &cobra.Command{
 	Use:     "export [name]",
 	Aliases: []string{"e"},
-	Short:   "Export positions as GeoJSON",
-	Long: `Export positions as GeoJSON for mapping applications.
+	Short:   "Export positions in various formats",
+	Long: `Export positions as GeoJSON, Markdown, or YAML.
 
 Examples:
-  # Export all positions for an item
+  # Export all positions for an item as GeoJSON
   position export harper --format geojson
+
+  # Export as markdown table
+  position export harper --format markdown
 
   # Export with time filter (relative)
   position export harper --format geojson --since 24h
@@ -46,8 +51,8 @@ Examples:
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, _ := cmd.Flags().GetString("format")
-		if format != "geojson" {
-			return fmt.Errorf("unsupported format: %s (only 'geojson' is supported)", format)
+		if format != "geojson" && format != "markdown" && format != "yaml" {
+			return fmt.Errorf("unsupported format: %s (use 'geojson', 'markdown', or 'yaml')", format)
 		}
 
 		geometry, _ := cmd.Flags().GetString("geometry")
@@ -85,7 +90,7 @@ Examples:
 		}
 
 		// Build item name cache for resolving IDs to names
-		items, err := charmClient.ListItems()
+		items, err := db.ListItems()
 		if err != nil {
 			return fmt.Errorf("failed to list items: %w", err)
 		}
@@ -102,7 +107,7 @@ Examples:
 		if len(args) == 1 {
 			// Export single item
 			name := args[0]
-			item, err := charmClient.GetItemByName(name)
+			item, err := db.GetItemByName(name)
 			if err != nil {
 				return fmt.Errorf("item '%s' not found", name)
 			}
@@ -119,50 +124,106 @@ Examples:
 			}
 		}
 
-		if len(positions) == 0 {
-			return fmt.Errorf("no positions found")
-		}
-
-		// Generate GeoJSON
-		var fc *geojson.FeatureCollection
-		if geometry == "line" {
-			fc = geojson.ToLineFeatureCollection(positions, nameResolver)
-		} else {
-			fc = geojson.ToPointsFeatureCollection(positions, nameResolver)
-		}
-
-		jsonBytes, err := fc.ToJSONIndent()
-		if err != nil {
-			return fmt.Errorf("failed to generate GeoJSON: %w", err)
-		}
-
-		// Output
 		output, _ := cmd.Flags().GetString("output")
-		if output != "" {
-			if err := os.WriteFile(output, jsonBytes, 0644); err != nil { //nolint:gosec // 0644 is intentional for data export files
-				return fmt.Errorf("failed to write file: %w", err)
-			}
-			fmt.Fprintf(os.Stderr, "Wrote %d positions to %s\n", len(positions), output)
-		} else {
-			fmt.Println(string(jsonBytes))
-		}
 
-		return nil
+		// Handle different output formats
+		switch format {
+		case "markdown":
+			return exportMarkdown(args, output)
+		case "yaml":
+			return exportYAML(output)
+		default:
+			return exportGeoJSON(positions, geometry, nameResolver, output)
+		}
 	},
+}
+
+func exportGeoJSON(positions []*models.Position, geometry string, nameResolver func(string) string, output string) error {
+	if len(positions) == 0 {
+		return fmt.Errorf("no positions found")
+	}
+
+	var fc *geojson.FeatureCollection
+	if geometry == "line" {
+		fc = geojson.ToLineFeatureCollection(positions, nameResolver)
+	} else {
+		fc = geojson.ToPointsFeatureCollection(positions, nameResolver)
+	}
+
+	jsonBytes, err := fc.ToJSONIndent()
+	if err != nil {
+		return fmt.Errorf("failed to generate GeoJSON: %w", err)
+	}
+
+	if output != "" {
+		if err := os.WriteFile(output, jsonBytes, 0644); err != nil { //nolint:gosec // 0644 is intentional for data export files
+			return fmt.Errorf("failed to write file: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "Wrote %d positions to %s\n", len(positions), output)
+	} else {
+		fmt.Println(string(jsonBytes))
+	}
+
+	return nil
+}
+
+func exportMarkdown(args []string, output string) error {
+	var itemID *uuid.UUID
+	if len(args) == 1 {
+		item, err := db.GetItemByName(args[0])
+		if err != nil {
+			return fmt.Errorf("item '%s' not found", args[0])
+		}
+		itemID = &item.ID
+	}
+
+	data, err := storage.ExportToMarkdown(db, itemID)
+	if err != nil {
+		return fmt.Errorf("failed to generate markdown: %w", err)
+	}
+
+	if output != "" {
+		if err := os.WriteFile(output, data, 0644); err != nil { //nolint:gosec // 0644 is intentional for data export files
+			return fmt.Errorf("failed to write file: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "Wrote markdown to %s\n", output)
+	} else {
+		fmt.Print(string(data))
+	}
+
+	return nil
+}
+
+func exportYAML(output string) error {
+	data, err := storage.ExportToYAML(db)
+	if err != nil {
+		return fmt.Errorf("failed to generate YAML: %w", err)
+	}
+
+	if output != "" {
+		if err := os.WriteFile(output, data, 0644); err != nil { //nolint:gosec // 0644 is intentional for data export files
+			return fmt.Errorf("failed to write file: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "Wrote YAML to %s\n", output)
+	} else {
+		fmt.Print(string(data))
+	}
+
+	return nil
 }
 
 func getPositionsForItem(item *models.Item, since, from, to time.Time) ([]*models.Position, error) {
 	if !since.IsZero() {
-		return charmClient.GetPositionsSince(item.ID, since)
+		return db.GetPositionsSince(item.ID, since)
 	}
 	if !from.IsZero() && !to.IsZero() {
-		return charmClient.GetPositionsInRange(item.ID, from, to)
+		return db.GetPositionsInRange(item.ID, from, to)
 	}
 	if !from.IsZero() {
-		return charmClient.GetPositionsSince(item.ID, from)
+		return db.GetPositionsSince(item.ID, from)
 	}
 	// No time filter - get all (use timeline which is DESC, but we want ASC)
-	positions, err := charmClient.GetTimeline(item.ID)
+	positions, err := db.GetTimeline(item.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -175,15 +236,15 @@ func getPositionsForItem(item *models.Item, since, from, to time.Time) ([]*model
 
 func getAllPositions(since, from, to time.Time) ([]*models.Position, error) {
 	if !since.IsZero() {
-		return charmClient.GetAllPositionsSince(since)
+		return db.GetAllPositionsSince(since)
 	}
 	if !from.IsZero() && !to.IsZero() {
-		return charmClient.GetAllPositionsInRange(from, to)
+		return db.GetAllPositionsInRange(from, to)
 	}
 	if !from.IsZero() {
-		return charmClient.GetAllPositionsSince(from)
+		return db.GetAllPositionsSince(from)
 	}
-	return charmClient.GetAllPositions()
+	return db.GetAllPositions()
 }
 
 // parseDuration parses relative duration strings like "24h", "7d", "1w".
@@ -228,7 +289,7 @@ func parseDate(s string) (time.Time, error) {
 }
 
 func init() {
-	exportCmd.Flags().StringP("format", "f", "geojson", "output format (geojson)")
+	exportCmd.Flags().StringP("format", "f", "geojson", "output format (geojson, markdown, yaml)")
 	exportCmd.Flags().StringP("geometry", "g", "points", "geometry type (points, line)")
 	exportCmd.Flags().String("since", "", "relative time filter (e.g., 24h, 7d, 1w)")
 	exportCmd.Flags().String("from", "", "start date (YYYY-MM-DD or RFC3339)")

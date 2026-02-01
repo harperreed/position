@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/harper/position/internal/charm"
+	"github.com/harper/position/internal/storage"
 	"github.com/harper/position/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +18,7 @@ var listCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List all tracked items",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		items, err := charmClient.ListItems()
+		items, err := db.ListItems()
 		if err != nil {
 			return fmt.Errorf("failed to list items: %w", err)
 		}
@@ -29,10 +29,10 @@ var listCmd = &cobra.Command{
 		}
 
 		for _, item := range items {
-			pos, err := charmClient.GetCurrentPosition(item.ID)
+			pos, err := db.GetCurrentPosition(item.ID)
 			if err != nil {
 				// ErrNotFound is expected for items without positions
-				if !errors.Is(err, charm.ErrNotFound) {
+				if !errors.Is(err, storage.ErrNotFound) {
 					// Unexpected error - log but continue with other items
 					fmt.Fprintf(os.Stderr, "warning: failed to get position for %s: %v\n", item.Name, err)
 				}

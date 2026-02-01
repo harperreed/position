@@ -19,12 +19,12 @@ var currentCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		item, err := charmClient.GetItemByName(name)
+		item, err := db.GetItemByName(name)
 		if err != nil {
 			return fmt.Errorf("item '%s' not found", name)
 		}
 
-		pos, err := charmClient.GetCurrentPosition(item.ID)
+		pos, err := db.GetCurrentPosition(item.ID)
 		if err != nil {
 			return fmt.Errorf("no position found for '%s'", name)
 		}
