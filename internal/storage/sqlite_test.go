@@ -582,6 +582,45 @@ func TestDefaultDBPath(t *testing.T) {
 	}
 }
 
+func TestDefaultDBPath_WithXDGDataHome(t *testing.T) {
+	// Save original value
+	original := os.Getenv("XDG_DATA_HOME")
+	defer os.Setenv("XDG_DATA_HOME", original)
+
+	// Set custom XDG_DATA_HOME
+	tmpDir := t.TempDir()
+	os.Setenv("XDG_DATA_HOME", tmpDir)
+
+	path := DefaultDBPath()
+
+	expected := filepath.Join(tmpDir, "position", "position.db")
+	if path != expected {
+		t.Errorf("got path %s, want %s", path, expected)
+	}
+}
+
+func TestDefaultDBPath_WithoutXDGDataHome(t *testing.T) {
+	// Save original value
+	original := os.Getenv("XDG_DATA_HOME")
+	defer os.Setenv("XDG_DATA_HOME", original)
+
+	// Unset XDG_DATA_HOME
+	os.Unsetenv("XDG_DATA_HOME")
+
+	path := DefaultDBPath()
+
+	// Should fall back to ~/.local/share/position/position.db
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home directory")
+	}
+
+	expected := filepath.Join(home, ".local", "share", "position", "position.db")
+	if path != expected {
+		t.Errorf("got path %s, want %s", path, expected)
+	}
+}
+
 func TestSQLiteDB_ImplementsRepository(t *testing.T) {
 	// Compile-time check that SQLiteDB implements Repository
 	var _ Repository = (*SQLiteDB)(nil)

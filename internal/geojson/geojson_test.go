@@ -162,3 +162,44 @@ func TestFeatureCollection_ToJSON(t *testing.T) {
 		t.Error("expected type FeatureCollection in JSON")
 	}
 }
+
+func TestFeatureCollection_ToJSONIndent(t *testing.T) {
+	fc := &FeatureCollection{
+		Type:     "FeatureCollection",
+		Features: []Feature{},
+	}
+
+	jsonBytes, err := fc.ToJSONIndent()
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	// Check that output is formatted (contains newlines)
+	output := string(jsonBytes)
+	if len(output) == 0 {
+		t.Error("expected non-empty output")
+	}
+
+	// Indented JSON should contain newlines
+	if !containsNewline(output) {
+		t.Error("expected indented output to contain newlines")
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(jsonBytes, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if parsed["type"] != "FeatureCollection" {
+		t.Error("expected type FeatureCollection in JSON")
+	}
+}
+
+func containsNewline(s string) bool {
+	for _, c := range s {
+		if c == '\n' {
+			return true
+		}
+	}
+	return false
+}
