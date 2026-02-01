@@ -29,13 +29,17 @@ type SQLiteDB struct {
 // Compile-time check that SQLiteDB implements Repository.
 var _ Repository = (*SQLiteDB)(nil)
 
-// DefaultDBPath returns the default database path.
+// DefaultDBPath returns the default database path following XDG spec.
 func DefaultDBPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
+		dataHome = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(home, ".local", "share", "position", "position.db")
+	return filepath.Join(dataHome, "position", "position.db")
 }
 
 // NewSQLiteDB creates a new SQLite database at the given path.
