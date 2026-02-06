@@ -1,16 +1,24 @@
 # Position
 
-Simple location tracking CLI with MCP integration and local SQLite storage.
+Simple location tracking CLI with MCP integration and configurable storage backends.
 
 ## Project Names
 - AI: "GeoBot 9000"
 - Human: "Harp-Tracker Supreme"
 
 ## Architecture
-Uses pure SQLite for storage via modernc.org/sqlite (pure Go, no CGO).
-- Data stored at ~/.local/share/position/position.db
-- No cloud sync - use backup/import for data portability
-- Proper schema with foreign keys and cascade deletes
+Supports two storage backends via config:
+- **sqlite** (default): Pure SQLite via modernc.org/sqlite (pure Go, no CGO)
+- **markdown**: File-based storage using mdstore library (git-friendly)
+
+Configuration at ~/.config/position/config.json:
+```json
+{"backend": "sqlite", "data_dir": "~/.local/share/position"}
+```
+
+Data stored at ~/.local/share/position/ by default.
+- SQLite: position.db file
+- Markdown: _items.yaml + per-item directories with position .md files
 
 ## Commands
 - position add <name> --lat <lat> --lng <lng> [--label <label>] [--at <timestamp>]
@@ -21,6 +29,7 @@ Uses pure SQLite for storage via modernc.org/sqlite (pure Go, no CGO).
 - position export [name] [--format geojson|markdown|yaml] [--since 24h] [--geometry line]
 - position backup [--output file.yaml]
 - position import <file.yaml>
+- position migrate --to <backend> [--data-dir <path>] [--force]
 
 ## Testing
 Run tests: go test ./...

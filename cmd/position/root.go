@@ -1,16 +1,17 @@
 // ABOUTME: Root Cobra command and global flags
-// ABOUTME: Sets up CLI structure and SQLite database connection
+// ABOUTME: Sets up CLI structure and storage backend connection via config
 
 package main
 
 import (
 	"fmt"
 
+	"github.com/harper/position/internal/config"
 	"github.com/harper/position/internal/storage"
 	"github.com/spf13/cobra"
 )
 
-var db *storage.SQLiteDB
+var db storage.Repository
 
 var rootCmd = &cobra.Command{
 	Use:   "position",
@@ -31,10 +32,13 @@ Examples:
   position timeline harper
   position list`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		var err error
-		db, err = storage.NewSQLiteDB(storage.DefaultDBPath())
+		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("failed to open database: %w", err)
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+		db, err = cfg.OpenStorage()
+		if err != nil {
+			return fmt.Errorf("failed to open storage: %w", err)
 		}
 		return nil
 	},

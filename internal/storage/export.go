@@ -5,6 +5,8 @@ package storage
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -110,12 +112,6 @@ func ImportFromYAML(repo Repository, data []byte) error {
 		return fmt.Errorf("wrong tool: %s (expected position)", backup.Tool)
 	}
 
-	// Get direct database access for imports to bypass deduplication
-	sqliteDB, ok := repo.(*SQLiteDB)
-	if !ok {
-		return fmt.Errorf("import requires SQLiteDB")
-	}
-
 	// Import items
 	for _, itemBackup := range backup.Items {
 		id, err := uuid.Parse(itemBackup.ID)
@@ -162,12 +158,39 @@ func ImportFromYAML(repo Repository, data []byte) error {
 		}
 
 		// Direct insert to bypass deduplication
-		if err := importPositionDirect(sqliteDB, pos); err != nil {
+		if err := importPositionDirectAny(repo, pos); err != nil {
 			return fmt.Errorf("create position: %w", err)
 		}
 	}
 
 	return nil
+}
+
+// importPositionDirectAny inserts a position directly without deduplication for any backend.
+func importPositionDirectAny(repo Repository, pos *models.Position) error {
+	switch r := repo.(type) {
+	case *SQLiteDB:
+		return importPositionDirect(r, pos)
+	case *MarkdownStore:
+		return importPositionDirectMarkdown(r, pos)
+	default:
+		// Fallback: use regular CreatePosition (may deduplicate)
+		return repo.CreatePosition(pos)
+	}
+}
+
+// importPositionDirectMarkdown writes a position file directly without deduplication.
+func importPositionDirectMarkdown(store *MarkdownStore, pos *models.Position) error {
+	itemDir, err := store.resolveItemDir(pos.ItemID)
+	if err != nil {
+		return fmt.Errorf("resolve item directory: %w", err)
+	}
+	if err := os.MkdirAll(itemDir, 0750); err != nil {
+		return fmt.Errorf("create item directory: %w", err)
+	}
+	filename := positionFileName(pos)
+	path := filepath.Join(itemDir, filename)
+	return writePositionFile(path, pos)
 }
 
 // importPositionDirect inserts a position directly without deduplication.
