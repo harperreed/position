@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/harper/position/internal/models"
-	"github.com/harper/suite/mdstore"
+	"github.com/harperreed/mdstore"
 )
 
 // MigrateSummary holds counts of migrated entities.

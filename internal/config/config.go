@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/harper/position/internal/storage"
-	"github.com/harper/suite/mdstore"
+	"github.com/harperreed/mdstore"
 )
 
 // Config stores position configuration.

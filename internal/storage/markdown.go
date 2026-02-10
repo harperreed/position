@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/harper/position/internal/models"
-	"github.com/harper/suite/mdstore"
+	"github.com/harperreed/mdstore"
 	"gopkg.in/yaml.v3"
 )
 
