@@ -21,8 +21,8 @@ Track geographic positions for entities over time with labels and notes.
 | `mcp__position__add_position` | Log a position |
 | `mcp__position__get_current` | Get latest position |
 | `mcp__position__get_timeline` | Get position history |
-| `mcp__position__list_entities` | List tracked entities |
-| `mcp__position__remove_entity` | Remove an entity |
+| `mcp__position__list_items` | List tracked items |
+| `mcp__position__remove_item` | Remove an item |
 
 ## Common patterns
 
@@ -30,8 +30,8 @@ Track geographic positions for entities over time with labels and notes.
 ```
 mcp__position__add_position(
   name="harper",
-  lat=37.7749,
-  lng=-122.4194,
+  latitude=37.7749,
+  longitude=-122.4194,
   label="San Francisco Office"
 )
 ```
@@ -43,12 +43,12 @@ mcp__position__get_current(name="harper")
 
 ### Get timeline
 ```
-mcp__position__get_timeline(name="harper", since="2026-01-01")
+mcp__position__get_timeline(name="harper")
 ```
 
 ### List all tracked entities
 ```
-mcp__position__list_entities()
+mcp__position__list_items()
 ```
 
 ## CLI commands (if MCP unavailable)
@@ -64,4 +64,4 @@ position export --format markdown # Markdown table
 
 ## Data location
 
-`~/.local/share/position/position.db` (SQLite, respects XDG_DATA_HOME)
+Configurable via `~/.config/position/config.json`. Supports `sqlite` (default) and `markdown` backends. Data stored at `~/.local/share/position/` (respects XDG_DATA_HOME).

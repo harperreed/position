@@ -103,8 +103,8 @@ func TestSkillInstall_FileContent(t *testing.T) {
 		"mcp__position__add_position",
 		"mcp__position__get_current",
 		"mcp__position__get_timeline",
-		"mcp__position__list_entities",
-		"mcp__position__remove_entity",
+		"mcp__position__list_items",
+		"mcp__position__remove_item",
 	}
 
 	for _, expected := range expectedStrings {

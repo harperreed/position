@@ -16,10 +16,7 @@ Track items (people, vehicles, things) and their locations over time. Query curr
 ## Installation
 
 ```bash
-# From source
-go install github.com/harper/position/cmd/position@latest
-
-# Or build locally
+# Build from source
 git clone https://github.com/harper/position
 cd position
 make build
@@ -62,6 +59,10 @@ position remove harper
 | `position timeline <name>` | `t` | Get position history (newest first) |
 | `position list` | `ls` | List all tracked items |
 | `position remove <name>` | `rm` | Remove item and all history |
+| `position export [name]` | - | Export positions (geojson, markdown, yaml) |
+| `position backup [--output file]` | - | Backup all data to YAML |
+| `position import <file>` | - | Import data from YAML backup |
+| `position migrate --to <backend>` | - | Migrate between storage backends |
 | `position mcp` | - | Start MCP server for AI agents |
 
 ### Add Options
@@ -94,33 +95,25 @@ position remove harper --confirm
 
 ## Data Storage
 
-Position uses SQLite for local storage, following XDG standards:
+Position supports pluggable storage backends, configured via `~/.config/position/config.json`:
 
-- **Default path:** `~/.local/share/position/position.db`
-- **Custom path:** `position --db /path/to/custom.db <command>`
-
-### Schema
-
-```sql
--- Items being tracked
-CREATE TABLE items (
-    id TEXT PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL,
-    created_at DATETIME NOT NULL
-);
-
--- Location history
-CREATE TABLE positions (
-    id TEXT PRIMARY KEY,
-    item_id TEXT NOT NULL,
-    latitude REAL NOT NULL,
-    longitude REAL NOT NULL,
-    label TEXT,
-    recorded_at DATETIME NOT NULL,
-    created_at DATETIME NOT NULL,
-    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
-);
+```json
+{
+  "backend": "sqlite",
+  "data_dir": "~/.local/share/position"
+}
 ```
+
+### Backends
+
+| Backend | Description |
+|---------|-------------|
+| `sqlite` | Pure Go SQLite via modernc.org/sqlite (default) |
+| `markdown` | File-based storage using mdstore (git-friendly) |
+
+Data is stored at `~/.local/share/position/` by default (respects `XDG_DATA_HOME`).
+
+Use `position migrate --to <backend>` to switch between backends.
 
 ## MCP Integration
 
@@ -192,7 +185,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.24+
 - Make (optional)
 
 ### Building
@@ -226,29 +219,39 @@ make clean
 position/
 ├── cmd/position/          # CLI entry point
 │   ├── main.go           # Entry point
-│   ├── root.go           # Root command, DB connection
+│   ├── root.go           # Root command, config loading
 │   ├── add.go            # Add command
 │   ├── current.go        # Current command
 │   ├── timeline.go       # Timeline command
 │   ├── list.go           # List command
 │   ├── remove.go         # Remove command
-│   └── mcp.go            # MCP server command
+│   ├── export.go         # Export command (geojson, markdown, yaml)
+│   ├── backup.go         # Backup command
+│   ├── import.go         # Import command
+│   ├── migrate.go        # Migrate command
+│   ├── mcp.go            # MCP server command
+│   ├── skill.go          # Skill install command
+│   └── skill/SKILL.md    # MCP skill definition
 ├── internal/
-│   ├── db/               # Database layer
-│   │   ├── db.go         # Connection management
-│   │   ├── migrations.go # Schema
-│   │   ├── items.go      # Item CRUD
-│   │   └── positions.go  # Position CRUD
+│   ├── config/           # Configuration management
+│   │   └── config.go     # Backend + data dir config
+│   ├── storage/          # Storage backends
+│   │   ├── repository.go # Storage interface
+│   │   ├── sqlite.go     # SQLite backend
+│   │   ├── markdown.go   # Markdown/mdstore backend
+│   │   ├── migrate.go    # Backend migration
+│   │   ├── export.go     # Export logic
+│   │   └── errors.go     # Storage errors
 │   ├── models/           # Data models
 │   │   └── models.go     # Item, Position structs
+│   ├── geojson/          # GeoJSON generation
+│   │   └── geojson.go    # GeoJSON export support
 │   ├── mcp/              # MCP integration
 │   │   ├── server.go     # MCP server
 │   │   ├── tools.go      # MCP tools
 │   │   └── resources.go  # MCP resources
 │   └── ui/               # Terminal formatting
 │       └── format.go     # Output formatting
-├── test/
-│   └── integration_test.go
 ├── docs/plans/           # Design documents
 ├── go.mod
 ├── Makefile
@@ -266,21 +269,17 @@ go test -v ./...
 
 # With race detector
 go test -race ./...
-
-# Specific package
-go test ./internal/db/...
-
-# Integration tests only
-go test ./test/...
 ```
 
 ## Dependencies
 
 - [cobra](https://github.com/spf13/cobra) - CLI framework
 - [modernc.org/sqlite](https://modernc.org/sqlite) - Pure Go SQLite
+- [harperreed/mdstore](https://github.com/harperreed/mdstore) - Markdown file storage
 - [google/uuid](https://github.com/google/uuid) - UUID generation
 - [fatih/color](https://github.com/fatih/color) - Terminal colors
 - [modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk) - MCP integration
+- [gopkg.in/yaml.v3](https://pkg.go.dev/gopkg.in/yaml.v3) - YAML support
 
 ## License
 
